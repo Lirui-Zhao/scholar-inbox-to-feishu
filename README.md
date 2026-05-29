@@ -21,6 +21,7 @@ The skill is named `paper-daily`; this repo wraps it with setup docs, configurat
 - [Scheduling / 定时任务](#scheduling--定时任务)
 - [Security / 安全](#security--安全)
 - [Publish to GitHub / 推送到-github](#publish-to-github--推送到-github)
+- [Acknowledgments / 致谢](#acknowledgments--致谢)
 - [License](#license)
 
 ---
@@ -188,6 +189,12 @@ git branch -M main
 git remote add origin https://github.com/<you>/scholar-inbox-to-feishu.git
 git push -u origin main
 ```
+
+## Acknowledgments / 致谢
+
+This project was informed by the summary / approach in [zsyggg/paper-craft-skills](https://github.com/zsyggg/paper-craft-skills) — thanks!
+
+本项目在整理思路时参考了 [zsyggg/paper-craft-skills](https://github.com/zsyggg/paper-craft-skills) 的总结，特此致谢。
 
 ## License
 
