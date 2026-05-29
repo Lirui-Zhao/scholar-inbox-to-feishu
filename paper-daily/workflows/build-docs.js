@@ -26,6 +26,7 @@ const dateFolderToken = A.dateFolderToken || ''
 const workdir = A.workdir
 const guidePath = A.guidePath || '~/.claude/skills/paper-daily/references/paper-writeup-guide.md'
 const docxmlPath = A.docxmlPath || '~/.claude/skills/paper-daily/references/feishu-docxml.md'
+const indexDocUrl = A.indexDocUrl || ''   // pre-built daily-index shell URL; '' = no back-link
 if (!workdir) throw new Error('build-docs.js: args.workdir is required')
 
 // ── schemas (force validated structured returns) ─────────────────────────────
@@ -83,6 +84,9 @@ title / abstract / authors / affiliations / arxiv_id / url / html_link / github_
 【飞书目标】
 - 父文件夹 token: ${dateFolderToken}（创建文档时必须带 --parent-token）
 - 文档标题用中文友好版（自己据论文提炼）
+- 返回索引按钮（INDEX_URL）: ${indexDocUrl || '(本次无索引，省略返回按钮)'}
+  ${indexDocUrl ? `→ plan-JSON 第 0 块里、紧跟 <title> 之后放一个"返回索引"callout（在一句话总结之前，确保它在文档最顶部）：
+  <callout emoji="📚" background-color="light-blue" border-color="blue"><p>👉 <a href="${indexDocUrl}">返回今日论文索引</a></p></callout>` : '→ INDEX_URL 为空，不要加返回按钮。'}
 
 【工作目录命名空间】（绝对路径，避免并发冲突）
 - workdir          : ${workdir}

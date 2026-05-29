@@ -111,13 +111,21 @@ lark-cli docs +media-insert --doc $DOC_ID \
 
 ---
 
-## Round 4：当日索引文档模式（主 agent 用）
+## 单篇 doc 顶部的"返回索引"按钮
 
-主 agent 在所有单篇 doc 建好后，建一个当日索引 doc，DocxXML 模板：
+每篇深读 doc 的最顶部（`<title>` 之后、一句话总结之前）放一个回链 callout，让读者一键回到当日索引：
 
 ```xml
-<title>📚 YYYY-MM-DD · 每日论文</title>
+<callout emoji="📚" background-color="light-blue" border-color="blue"><p>👉 <a href="{INDEX_URL}">返回今日论文索引</a></p></callout>
+```
 
+`{INDEX_URL}` 是索引文档 URL。因为单篇 doc 在索引之前生成，所以主流程**先建索引壳子**（只含 `<title>`）拿到稳定 URL，传给各篇；索引正文最后再填。`--no-feishu`（无索引）时省略该 callout。
+
+## Round 4：当日索引文档模式（主 agent 用）
+
+主 agent **先建只含 `<title>` 的索引壳子**（Round 2.5，拿到稳定 URL 供各篇回链），待所有单篇 doc 建好后，把下面的**正文**（**不含 `<title>`**，标题已在壳子里）用 `docs +update --command append` 追加进壳子：
+
+```xml
 <callout emoji="📅" background-color="light-blue" border-color="blue">
   <p><b>今日 Top N</b>（按 Scholar Inbox 个性化相关度排序）<br/>
   <b>主题</b>：（根据 N 篇标题归纳 1–2 句）<br/>

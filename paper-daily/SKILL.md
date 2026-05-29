@@ -141,6 +141,21 @@ cat "$WORKDIR/_digest.json" | \
 
 空数组 → 输出 "今日推荐已全部处理过 ✅"，跳到 Round 5。
 
+### Round 2.5：预建当日索引文档"壳子" ⛔
+
+**`--dry-run` 或 `--no-feishu` 跳过本 Round**（此时各篇 doc 顶部不放"返回索引"按钮）。
+
+为了让每篇深读 doc 顶部能放一个"返回索引"按钮，索引文档的 URL 必须在 Round 3 之前就存在。所以**先建一个只含标题的空壳**，拿到稳定的 `INDEX_DOC_URL` / `INDEX_DOC_ID`，正文留到 Round 4 再填：
+
+```bash
+N=$(python3 -c "import json;print(len(json.load(open('$WORKDIR/_todo.json'))))")
+printf '<title>📚 %s · 每日论文（Top %s）</title>' "$DATE" "$N" | \
+  lark-cli docs +create --api-version v2 \
+    --title "📚 $DATE · 每日论文（Top $N）" \
+    --parent-token {DATE_FOLDER_TOKEN} --content -
+# 解析 stdout：INDEX_DOC_ID = data.document.document_id；INDEX_DOC_URL = data.document.url
+```
+
 ### Round 3：并发跑 sub-agent ⛔
 
 **`--dry-run` 跳过本 Round，到 Round 5。**
@@ -159,6 +174,7 @@ Workflow({
     date: "<YYYY-MM-DD>",
     guidePath: "<HOME>/.claude/skills/paper-daily/references/paper-writeup-guide.md",
     docxmlPath: "<HOME>/.claude/skills/paper-daily/references/feishu-docxml.md",
+    indexDocUrl: "<INDEX_DOC_URL，来自 Round 2.5；--no-feishu 时留空字符串>",
     parallelHint: <--parallel 值，默认 4>
   }
 })
@@ -202,6 +218,7 @@ python3 ~/.claude/skills/paper-daily/scripts/seen.py add <成功的 paper_id 列
 
 【论文】{paper_dict_json}
 【父文件夹 token】{DATE_FOLDER_TOKEN}（建文档必须带 --parent-token）
+【返回索引按钮 INDEX_URL】{INDEX_DOC_URL，来自 Round 2.5；--no-feishu 时留空，则省略该按钮}
 【命名空间】workdir={WORKDIR}；PDF {WORKDIR}/_pdfs/{paper_id}.pdf；
   图 {WORKDIR}/_work_{paper_id}/；代码 /tmp/paper_code_{paper_id}/；
   plan-JSON {WORKDIR}/_docx_plan_{paper_id}.json；幂等 token {WORKDIR}/_token_{paper_id}.json
@@ -210,22 +227,21 @@ python3 ~/.claude/skills/paper-daily/scripts/seen.py add <成功的 paper_id 列
 
 返回处理同 3.2 / 3.3（手动模式没有 verify 阶段；如需质量校验可在收集 succeeded 后对偏薄的再补，或接受 sub-agent 自审）。
 
-### Round 4：建当日索引 doc + 发卡片 ⛔
+### Round 4：填充当日索引 doc + 发卡片 ⛔
 
 **`--no-feishu` 跳过本 Round。**
 
-#### 4.1 构造并创建当日索引 doc
+#### 4.1 填充当日索引 doc（壳子在 Round 2.5 已建好）
 
-按 `references/feishu-docxml.md` 的「Round 4 当日索引文档模式」构造 DocxXML（标题、概览 callout、今日精选表格、N 个带超链接的 H2 一句话简介、用法 callout）。索引 doc 较大且含嵌套引号——**先写到本地 `{WORKDIR}/_index.xml`，再用 stdin 创建**（内联 `--content '...'` 在复杂内容上会被 shell 转义坑到；`--content @绝对路径` 会被拒）：
+按 `references/feishu-docxml.md` 的「Round 4 当日索引文档模式」构造**正文** DocxXML（概览 callout、今日精选表格、N 个带超链接的 H2 一句话简介、用法 callout——标题已在壳子里，不要再写 `<title>`）。索引 doc 较大且含嵌套引号——**先写到本地 `{WORKDIR}/_index.xml`，再用 stdin 追加到壳子**（`append`；内联 `--content '...'` 会被 shell 转义坑到、`--content @绝对路径` 会被拒）：
 
 ```bash
-cat "$WORKDIR/_index.xml" | lark-cli docs +create --api-version v2 \
-    --title "📚 YYYY-MM-DD · 每日论文（Top N）" \
-    --parent-token {DATE_FOLDER_TOKEN} \
+cat "$WORKDIR/_index.xml" | lark-cli docs +update --api-version v2 \
+    --doc {INDEX_DOC_ID} --command append \
     --content -
 ```
 
-各 H2/表格里的中文标题、一句话简介可从每篇的 `{WORKDIR}/_docx_plan_{paper_id}.json`（首块的 `<title>` + 一句话总结 callout）提取。解析 stdout 拿 `INDEX_DOC_URL`（校验用租户无关正则）。
+各 H2/表格里的中文标题、一句话简介从每篇 `{WORKDIR}/_docx_plan_{paper_id}.json`（首块的 `<title>` + 一句话总结 callout）提取。`INDEX_DOC_URL` 就是 Round 2.5 拿到的那个（沿用，校验用租户无关正则）。
 
 #### 4.2 发汇总卡片
 
