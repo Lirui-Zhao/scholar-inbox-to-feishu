@@ -1,0 +1,15 @@
+# Secrets — never commit your Scholar Inbox sha_key
+config/.env
+.env
+
+# macOS cruft
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Local virtualenvs
+.venv/
+venv/

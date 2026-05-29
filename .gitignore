@@ -1,0 +1,19 @@
+# Secrets — never commit your Scholar Inbox sha_key
+**/config/.env
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# macOS / editors
+.DS_Store
+
+# Local virtualenvs
+.venv/
+venv/
+
+# Runtime / local output (not part of the repo)
+papers-daily/
+*.log
