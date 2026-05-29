@@ -179,17 +179,6 @@ bash ~/.claude/skills/paper-daily/scripts/schedule.sh status
 - 运行态数据（cookies、seen 状态、飞书 token 缓存、每日工作目录）默认在仓库之外（`~/.local/share/paper-daily`、`~/papers-daily`），不会进版本库。
 - 提交前可自查：`git ls-files | grep -i '\.env$'` 应为空。
 
-## Publish to GitHub / 推送到 GitHub
-
-```bash
-cd scholar-inbox-to-feishu
-git init && git add -A
-git commit -m "Initial commit: scholar-inbox-to-feishu"
-git branch -M main
-git remote add origin https://github.com/<you>/scholar-inbox-to-feishu.git
-git push -u origin main
-```
-
 ## Acknowledgments / 致谢
 
 This project was informed by the summary / approach in [zsyggg/paper-craft-skills](https://github.com/zsyggg/paper-craft-skills) — thanks!
@@ -198,4 +187,7 @@ This project was informed by the summary / approach in [zsyggg/paper-craft-skill
 
 ## License
 
-[MIT](./LICENSE) © 2026 Lirui Zhao
+[**CC BY-NC 4.0**](./LICENSE) © 2026 Lirui Zhao — **非商用 / non-commercial use only**.
+
+You may use, modify, and share this work **for non-commercial purposes**, with attribution. **Commercial use is not permitted.**
+可自由使用、修改、分享，但**不得用于商业目的**，且需署名（Attribution-NonCommercial 4.0 International）。
