@@ -59,6 +59,23 @@ description: |
 
 脚本（`scholar_inbox.py` / `seen.py` / `feishu_push.py`）已读 `PAPER_DAILY_STATE_DIR` / `PAPER_DAILY_CONFIG_DIR` / `FEISHU_RECEIVER`；本 SKILL 的 bash 用 `${VAR:-默认}` 形式。
 
+## 单链接模式（`/paper-daily <url>`）
+
+当位置参数是一个 http(s) 链接（arxiv / 项目页 / PDF）时，**跳过 Scholar Inbox**（不走 Round 1/2/2.5 与 Round 4 索引），只解析这一篇并推给用户。
+
+1. **预检 + 文件夹**：照 Round 0 预检；Round 0.5 只需确保根文件夹存在，并建/复用一个专放临时单篇的子文件夹 `${FEISHU_ROOT_FOLDER:-paper-daily}/adhoc`（token 记进 `folder_state.json` 的 `date_folders["adhoc"]`）。
+2. **解析链接成记录**：
+   ```bash
+   WORKDIR=${PAPER_DAILY_WORKDIR_ROOT:-$HOME/papers-daily}/adhoc
+   mkdir -p "$WORKDIR"
+   python3 ~/.claude/skills/paper-daily/scripts/adhoc_record.py '<url>' > "$WORKDIR/_todo.json"
+   ```
+   （arxiv 自动取标题/作者/摘要；其它来源标题留空，sub-agent 从 PDF 提取。`paper_id` 为脚本生成的稳定 int。）
+3. **建文档**：用 `build-docs.js` 跑这 1 篇，`args.indexDocUrl: ""`（无返回索引、**仍有点赞链接**），`dateFolderToken` = adhoc 子文件夹 token，`workdir` = 上面的 adhoc 目录，`papers` = `[{paper_id, title}]`。**不读/不写 seen.json**（显式按需请求）；幂等 `_token_{paper_id}.json` 防重复建。Workflow 不可用则手动单个 Agent（briefing 同 Round 3.4，INDEX_URL 留空）。
+4. **推送**：从返回里取成功那篇，构造**单条** records（无 INDEX 条目）跑 `feishu_push.py send-card`，并把 `doc_url` 回给用户；失败直接报原因。
+
+> 单链接模式没有 digest 的热度字段，doc 顶部仍有「去 Scholar Inbox 点赞」链接，但 meta 不显示 👀/👍 热度。
+
 ---
 
 ## 强制工作流
@@ -233,7 +250,7 @@ python3 ~/.claude/skills/paper-daily/scripts/seen.py add <成功的 paper_id 列
 
 #### 4.1 填充当日索引 doc（壳子在 Round 2.5 已建好）
 
-按 `references/feishu-docxml.md` 的「Round 4 当日索引文档模式」构造**正文** DocxXML（概览 callout、今日精选表格、N 个带超链接的 H2 一句话简介、用法 callout——标题已在壳子里，不要再写 `<title>`）。索引 doc 较大且含嵌套引号——**先写到本地 `{WORKDIR}/_index.xml`，再用 stdin 追加到壳子**（`append`；内联 `--content '...'` 会被 shell 转义坑到、`--content @绝对路径` 会被拒）：
+按 `references/feishu-docxml.md` 的「Round 4 当日索引文档模式」构造**正文** DocxXML（概览 callout、今日精选表格、N 个带超链接的 H2 一句话简介、用法 callout——标题已在壳子里，不要再写 `<title>`）。表格列：`# / 论文 / 机构 / 相关度 / 🔥热度 / 深度阅读`——**机构**取 `_digest.json`/`_todo.json` 每篇的 `affiliations`（缩写成前 1-2 个 + "等"），**热度**取 `total_read`(👀)+`total_likes`(👍)，这些字段主 agent 已持有。索引 doc 较大且含嵌套引号——**先写到本地 `{WORKDIR}/_index.xml`，再用 stdin 追加到壳子**（`append`；内联 `--content '...'` 会被 shell 转义坑到、`--content @绝对路径` 会被拒）：
 
 ```bash
 cat "$WORKDIR/_index.xml" | lark-cli docs +update --api-version v2 \

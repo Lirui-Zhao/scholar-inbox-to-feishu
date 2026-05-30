@@ -78,15 +78,17 @@ function buildBriefing(p) {
 
 【你这篇论文】paper_id=${pid}，标题《${p.title || ''}》。
 完整记录在 ${workdir}/_todo.json（一个数组，按 paper_id 匹配你这篇）。先 Read / python 取出你这篇的字段：
-title / abstract / authors / affiliations / arxiv_id / url / html_link / github_url / project_url / teaser_captions / ranking_score。
+title / abstract / authors / affiliations / arxiv_id / url / html_link / github_url / project_url / teaser_captions / ranking_score / total_read / total_likes（后两个用于 meta 热度行；缺失则省略热度）。
 下载 PDF：arxiv_id 非空 → \`https://arxiv.org/pdf/{arxiv_id}\`；否则 url 以 .pdf 结尾 → 直接下 url（CVPR openaccess paper.pdf 属此类）；都不满足 → 按 guide 返回 unsupported_source。
 
 【飞书目标】
 - 父文件夹 token: ${dateFolderToken}（创建文档时必须带 --parent-token）
 - 文档标题用中文友好版（自己据论文提炼）
-- 返回索引按钮（INDEX_URL）: ${indexDocUrl || '(本次无索引，省略返回按钮)'}
-  ${indexDocUrl ? `→ plan-JSON 第 0 块里、紧跟 <title> 之后放一个"返回索引"callout（在一句话总结之前，确保它在文档最顶部）：
-  <callout emoji="📚" background-color="light-blue" border-color="blue"><p>👉 <a href="${indexDocUrl}">返回今日论文索引</a></p></callout>` : '→ INDEX_URL 为空，不要加返回按钮。'}
+- 顶部横幅：plan-JSON 第 0 块、紧跟 <title>、在一句话总结之前，放这个 callout（确保在文档最顶部）：
+  ${indexDocUrl
+    ? `<callout emoji="📚" background-color="light-blue" border-color="blue"><p>👉 <a href="${indexDocUrl}">返回今日论文索引</a>　·　👍 <a href="https://www.scholar-inbox.com">去 Scholar Inbox 点赞（帮它学你的口味）</a></p></callout>`
+    : `<callout emoji="📚" background-color="light-blue" border-color="blue"><p>👍 <a href="https://www.scholar-inbox.com">去 Scholar Inbox 点赞（帮它学你的口味）</a></p></callout>   （本次无索引，只放点赞链接）`}
+- meta 热度行：用 _todo.json 的 affiliations / total_read / total_likes（缺失则省略热度行）。
 
 【工作目录命名空间】（绝对路径，避免并发冲突）
 - workdir          : ${workdir}

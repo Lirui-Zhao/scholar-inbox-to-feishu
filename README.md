@@ -36,7 +36,9 @@ The skill is named `paper-daily`; this repo wraps it with setup docs, configurat
   - 引用论文原文公式 / Figure / Table 编号 ≥ 3 处（原生 LaTeX 渲染）
   - 有公开代码时嵌 ≥ 2 段代码并标 `文件:行号`
   - 至少 2 处局限（作者自述 + 独立判断）；无 AI 套话
-- **一份当日索引文档**：Top‑N 表格 + 每篇一句话简介 + 跳转链接。
+  - **顶部横幅**：一键「返回今日论文索引」+「👍 去 Scholar Inbox 点赞」（点赞回流让推荐算法学你的口味）
+  - meta 里显示**作者机构**与**社区热度**（👀 已读数 · 👍 点赞数，来自 Scholar Inbox）
+- **一份当日索引文档**：Top‑N 表格（含机构、相关度、🔥热度）+ 每篇一句话简介 + 跳转链接。
 - **一张飞书汇总卡片**推送到你的私聊（或指定群）。
 
 > 输出语言是**中文**（这是本工具的产品定位：给中文研究者的高质量论文速读）。
@@ -148,7 +150,10 @@ export FEISHU_RECEIVER=oc_xxxxxxxxxxxxxxxx
 /paper-daily --no-feishu        # 跳过当日索引 doc + 卡片（每篇 doc 仍建）
 /paper-daily --dry-run          # 只拉 digest 看今天推什么，不建文档
 /paper-daily setup              # 重新配置 Scholar Inbox 密钥
+/paper-daily https://arxiv.org/abs/2605.27817   # 单链接模式：只解析这一篇并推给你
 ```
+
+**单链接模式 / single-link mode**：位置参数给一个 arxiv / 项目页 / PDF 链接，就只解析那一篇、生成一篇飞书 doc 推给你（不走 Scholar Inbox digest，归档到 `paper-daily/adhoc/`）。适合你在别处看到一篇想读的论文时随手丢进来。
 
 > 首次请在**交互式会话**里先跑一次（完成 Scholar Inbox setup + 飞书授权），之后再挂定时任务。
 

@@ -111,15 +111,18 @@ lark-cli docs +media-insert --doc $DOC_ID \
 
 ---
 
-## 单篇 doc 顶部的"返回索引"按钮
+## 单篇 doc 顶部横幅（返回索引 + 去点赞）
 
-每篇深读 doc 的最顶部（`<title>` 之后、一句话总结之前）放一个回链 callout，让读者一键回到当日索引：
+每篇深读 doc 的最顶部（`<title>` 之后、一句话总结之前）放一个横幅 callout，含两个动作：
 
 ```xml
-<callout emoji="📚" background-color="light-blue" border-color="blue"><p>👉 <a href="{INDEX_URL}">返回今日论文索引</a></p></callout>
+<callout emoji="📚" background-color="light-blue" border-color="blue"><p>👉 <a href="{INDEX_URL}">返回今日论文索引</a>　·　👍 <a href="https://www.scholar-inbox.com">去 Scholar Inbox 点赞（帮它学你的口味）</a></p></callout>
 ```
 
-`{INDEX_URL}` 是索引文档 URL。因为单篇 doc 在索引之前生成，所以主流程**先建索引壳子**（只含 `<title>`）拿到稳定 URL，传给各篇；索引正文最后再填。`--no-feishu`（无索引）时省略该 callout。
+- **返回索引**：`{INDEX_URL}` 是索引文档 URL。单篇 doc 在索引之前生成，所以主流程**先建索引壳子**（只含 `<title>`）拿到稳定 URL，传给各篇；索引正文最后再填。`--no-feishu` / 单链接模式（无索引）时**去掉这一段**。
+- **去点赞**：链接是**常量** `https://www.scholar-inbox.com`（首页；用户登录态打开自己的 digest 去点赞，让推荐算法学口味）。**任何时候都保留**。⚠️ 绝不把 sha_key 放进链接。
+
+meta-info 段（紧跟横幅的 `<p>`）除作者/论文/代码外，加 **机构**（`affiliations` 逗号连接）和 **热度**（`👀 {total_read} 人读过 · 👍 {total_likes} 赞`）；字段缺失（单链接模式）则省略热度行。
 
 ## Round 4：当日索引文档模式（主 agent 用）
 
@@ -139,13 +142,14 @@ lark-cli docs +media-insert --doc $DOC_ID \
     <tr>
       <th background-color="light-gray">#</th>
       <th background-color="light-gray">论文</th>
+      <th background-color="light-gray">机构</th>
       <th background-color="light-gray">相关度</th>
-      <th background-color="light-gray">主题</th>
+      <th background-color="light-gray">🔥 热度</th>
       <th background-color="light-gray">深度阅读</th>
     </tr>
   </thead>
   <tbody>
-    <!-- N 行：序号、<b>中文标题</b>、score、主题词、<a href="DOC_URL">📖 打开</a> -->
+    <!-- N 行：序号、<b>中文标题</b>、机构(affiliations 缩写：前 1-2 个 + 等)、score、👀{total_read} 👍{total_likes}、<a href="DOC_URL">📖 打开</a> -->
   </tbody>
 </table>
 

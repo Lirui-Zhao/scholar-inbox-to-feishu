@@ -151,7 +151,7 @@ python3 ~/.claude/skills/paper-daily/scripts/fetch_images.py \
 
 ```json
 [
-  {"type":"xml","content":"<title>中文标题</title><callout emoji=\"📚\" background-color=\"light-blue\" border-color=\"blue\"><p>👉 <a href=\"{INDEX_URL}\">返回今日论文索引</a></p></callout><callout emoji=\"💡\" background-color=\"light-yellow\" border-color=\"yellow\"><p><b>一句话总结</b>：（100 字内）</p></callout><p><b>作者</b>: ...<br/><b>机构</b>: ...<br/><b>论文</b>: <a href=\"{PDF_URL}\">论文 PDF</a><br/><b>代码</b>: 未公开（或 GitHub URL）</p>"},
+  {"type":"xml","content":"<title>中文标题</title><callout emoji=\"📚\" background-color=\"light-blue\" border-color=\"blue\"><p>👉 <a href=\"{INDEX_URL}\">返回今日论文索引</a>　·　👍 <a href=\"https://www.scholar-inbox.com\">去 Scholar Inbox 点赞（帮它学你的口味）</a></p></callout><callout emoji=\"💡\" background-color=\"light-yellow\" border-color=\"yellow\"><p><b>一句话总结</b>：（100 字内）</p></callout><p><b>作者</b>: ...<br/><b>机构</b>: {affiliations 用逗号连接}<br/><b>热度</b>: 👀 {total_read} 人读过 · 👍 {total_likes} 赞<br/><b>论文</b>: <a href=\"{PDF_URL}\">论文 PDF</a><br/><b>代码</b>: 未公开（或 GitHub URL）</p>"},
   {"type":"xml","content":"<h1>开场 H1</h1><p>...反常识场景...</p><p>...</p><p>...</p>"},
   {"type":"xml","content":"<h1>现有方法的瓶颈</h1><p>...</p>"},
   {"type":"xml","content":"<h1>核心洞察</h1><p>...用 <latex>核心公式</latex>...类比...</p>"},
@@ -165,7 +165,10 @@ python3 ~/.claude/skills/paper-daily/scripts/fetch_images.py \
 ```
 
 要点：
-- **顶部"返回索引"按钮**：`{INDEX_URL}` 用 briefing 里给你的 INDEX_URL（紧跟 `<title>` 之后、在一句话总结之前，确保在文档最顶部）。briefing 未提供 INDEX_URL（如 `--no-feishu`）时，**省略**这个 callout。
+- **顶部横幅**（紧跟 `<title>`、在一句话总结之前，确保在文档最顶部）含两个动作：
+  - 「返回今日论文索引」：`{INDEX_URL}` 用 briefing 给你的 INDEX_URL。briefing **未提供** INDEX_URL（如 `--no-feishu` / 单链接模式）时，**去掉这一段**，但横幅仍保留下面的点赞链接。
+  - 「去 Scholar Inbox 点赞」：链接是**常量** `https://www.scholar-inbox.com`（首页；用户登录态下打开自己的 digest 去点赞，帮算法学口味）。**任何时候都保留**。⚠️ 绝不把 sha_key 放进链接。
+- **meta 热度行**：`<b>机构</b>` 用 `_todo.json` 里的 `affiliations`（逗号连接）；`<b>热度</b>` 用 `total_read`(👀) + `total_likes`(👍)。这几个字段缺失（单链接模式没有）时**省略热度行**、机构尽力而为。
 - **图文交错顺序 = 数组顺序**。把 `fig` 块放在它要解释的正文块**后面**，不要全堆末尾。
 - `content` 是合法 DocxXML 片段（`< > &` 在代码块里要转义）。meta-info 段**不要**写 venue / 年份 / paper_id。
 - `fig.file` 是相对 `_work_{paper_id}/images/` 的路径（如 `./fig2_architecture.png`）。
