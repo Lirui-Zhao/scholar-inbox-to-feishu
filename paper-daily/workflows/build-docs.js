@@ -63,6 +63,9 @@ const VERDICT_SCHEMA = {
     cliche_hits: { type: 'array', items: { type: 'string' } },
     issues: { type: 'array', items: { type: 'string' } },
     repaired: { type: 'boolean' },
+    status: { type: 'string', description: 'success | failed (for recovery reporting)' },
+    doc_url: { type: 'string' },
+    doc_token: { type: 'string' },
   },
   required: ['paper_id', 'meets_bar', 'issues', 'repaired'],
 }
@@ -99,6 +102,13 @@ title / abstract / authors / affiliations / arxiv_id / url / html_link / github_
 - 幂等 token 文件  : ${workdir}/_token_${pid}.json   （已存在则复用 doc_token、跳过建文档）
 
 务必先 mkdir -p ${workdir}/_pdfs ${workdir}/_work_${pid}。
+
+【铁律 · 不可违反】
+1. **只用真实命令**：建/改飞书文档只有这些子命令——\`lark-cli docs +create\`、\`lark-cli docs +update --command append|block_replace|block_delete\`、\`lark-cli docs +media-insert\`、\`lark-cli docs +fetch\`。**没有 \`lark-cli docx\` 命令（是 docs），更没有 \`replay\` 命令。**"回放 plan-JSON" 指的是你自己写一个循环：按 plan-JSON 顺序，xml 块用 +update append、fig 块用 +media-insert，**逐块手动推**，不是某个 replay 命令。先 \`lark-cli docs +create --help\` 看真实 flag。
+2. **建文档后立刻写 token 文件**：\`docs +create\` 拿到 document_id/url 的那一刻，立即把 {"paper_id":${pid},"doc_id":"...","doc_token":"...","doc_url":"..."} 写到 ${workdir}/_token_${pid}.json。这是恢复与防重复的唯一依据。
+3. **用 fetch_images.py 抓图**，别手搓 pdftoppm 整页转图当配图。长论文（>20 页）：分多次 Read PDF（每次 5–6 页）、只对少数关键页整页渲染兜底。
+4. **StructuredOutput 是最后一个动作**：把"推完飞书 + Phase 4 自审 + 必要修补"全部做完后，**最后**调用一次 StructuredOutput 返回结果；返回后**不要再调用任何工具**。status 用 success / partial / failed。
+
 严格按 guide 的「唯一返回」协议返回一行 JSON（success / partial / failed），不要任何其他文本。`
 }
 
@@ -124,6 +134,30 @@ function verifyBriefing(p, built) {
 返回 VERDICT JSON（含 paper_id）。`
 }
 
+// Recovery: when build did NOT return cleanly (e.g. it called StructuredOutput then
+// kept working → agent() throws), find any doc that was actually created via the
+// on-disk _token_<pid>.json the build agent writes on +create, then verify+repair it.
+// The on-disk token is the source of truth, decoupled from a clean structured return.
+function recoverBriefing(p, built) {
+  const pid = p.paper_id
+  return `恢复 + 校验：上一步 build 没有干净返回（可能 StructuredOutput 后又继续操作、或中途出错）。先弄清文档到底建出来没有。
+
+【1. 找回已建文档】Read ${workdir}/_token_${pid}.json。
+- 不存在 → 文档没建成：返回 {paper_id:${pid}, meets_bar:false, status:"failed", doc_url:"", doc_token:"", issues:["no doc created (no _token file)"], repaired:false}，结束。
+- 存在 → 取 doc_id / doc_token / doc_url，进入校验。再用 lark-cli docs +fetch --doc <doc_token> --api-version v2 确认文档真的存在（取不到就当未建成，按上一行返回 failed）。
+
+【2. 校验】对照 ${workdir}/_docx_plan_${pid}.json（若在）与飞书文档本体算指标：
+char_count(中文≥3000)/n_paragraphs(<p>≥15)/n_latex/n_figures(≥3)/n_refs(≥3)/
+h1_violations(<h1>含 钩子|开头|序言|尾声|金句|"N ·"数字编号前缀)/
+cliche_hits(深入探讨|至关重要|值得注意的是|通过本研究|综上所述|在本文中|进一步研究|具有重要意义)/
+顶部点赞横幅是否在（应含 https://www.scholar-inbox.com 的"去 Scholar Inbox 点赞"）。
+
+【3. 一次有界修补】用 doc_token 对飞书文档做**一次**修补（只用真实命令 docs +update --command append|block_replace、docs +media-insert）：
+违规 H1 → block_replace 成内容话题词；字数/段落不足 → append **真实**补充段落（❌禁 AI 套话凑数）；缺点赞横幅 → 在最前补 <callout emoji="📚" background-color="light-blue" border-color="blue"><p>👍 <a href="https://www.scholar-inbox.com">去 Scholar Inbox 点赞（帮它学你的口味）</a></p></callout>（定位不到就 append，至少要有）；图不足 → 读 manifest 再 +media-insert。
+
+【4. 返回】**只调用一次** StructuredOutput 返回 VERDICT JSON：必带 paper_id/meets_bar/issues/repaired，并带 status("success"/"failed")+doc_url+doc_token。返回后不要再调用任何工具。`
+}
+
 // ── pipeline: build → verify(+repair), per-paper, no batch barrier ────────────
 const results = await pipeline(
   papers,
@@ -132,17 +166,22 @@ const results = await pipeline(
     phase: 'Build',
     schema: RETURN_SCHEMA,
     agentType: 'general-purpose',
-  }),
+  }).catch((e) => ({ paper_id: p.paper_id, status: 'build_threw', stage: 'build_exception', error: String(e).slice(0, 200), doc_url: '', doc_token: '' })),
   (built, p) => {
-    // build failed or no doc → nothing to verify; pass through
-    if (!built || built.status !== 'success' || !built.doc_url) {
-      return { ...(built || { paper_id: p.paper_id, status: 'failed', stage: 'build_returned_null' }), verdict: null }
-    }
-    return agent(verifyBriefing(p, built), {
-      label: `verify:${p.paper_id}`,
+    // build agent occasionally fumbles its return (StructuredOutput then keeps working)
+    // → agent() threw and was caught above. Either way stage 2 ALWAYS runs: verify a
+    // clean build, or recover one whose doc may exist on disk.
+    const clean = built && built.status === 'success' && built.doc_url
+    const prompt = clean ? verifyBriefing(p, built) : recoverBriefing(p, built)
+    return agent(prompt, {
+      label: `${clean ? 'verify' : 'recover'}:${p.paper_id}`,
       phase: 'Verify',
       schema: VERDICT_SCHEMA,
-    }).then((verdict) => ({ ...built, verdict }))
+    }).then((verdict) => {
+      const docUrl = clean ? built.doc_url : (verdict && verdict.doc_url) || ''
+      const docTok = clean ? built.doc_token : (verdict && verdict.doc_token) || ''
+      return { ...(built || { paper_id: p.paper_id }), status: docUrl ? 'success' : 'failed', doc_url: docUrl, doc_token: docTok, verdict }
+    }).catch((e) => ({ ...(built || { paper_id: p.paper_id }), status: 'failed', stage: 'verify_exception', error: String(e).slice(0, 160), verdict: null }))
   }
 )
 

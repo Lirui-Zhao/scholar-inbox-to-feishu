@@ -176,6 +176,8 @@ python3 ~/.claude/skills/paper-daily/scripts/fetch_images.py \
 
 ### 3.2 回放 plan-JSON → 飞书（幂等 + 重试）
 
+> ⚠️ **"回放"是你手写的循环，不是某个命令。** 飞书文档只有这些真实子命令：`lark-cli docs +create`、`lark-cli docs +update --command append|block_replace|block_delete`、`lark-cli docs +media-insert`、`lark-cli docs +fetch`。**没有 `lark-cli docx`（是 `docs`），更没有 `replay` 命令。** 不要 `lark-cli docx ...`、不要 `lark-cli docs replay --plan ...`——那些会直接报 unknown command。"回放 plan-JSON" = 你按数组顺序，xml 块逐个 `+update append`、fig 块逐个 `+media-insert`，**自己逐块推**。拿不准就先 `lark-cli docs +create --help`。
+
 **① 幂等建文档**：先看 `{workdir}/_token_{paper_id}.json` 是否存在。
 - 存在 → 读出里面的 `doc_id` / `doc_token` / `doc_url`，**跳过创建**，直接进 ②（这是重试路径，避免重复文档）。
 - 不存在 → `lark-cli docs +create --api-version v2 --title "{中文标题}" --parent-token {DATE_FOLDER_TOKEN} --content '<plan-JSON 第 0 块即 title+总结+meta 的 content>'`，解析 stdout 拿 `document_id` / `url`，**立刻**写 `{workdir}/_token_{paper_id}.json`：`{"paper_id":<int>,"doc_id":"...","doc_token":"...","doc_url":"..."}`。
@@ -211,7 +213,9 @@ DocxXML 语法、create/update/media-insert 的完整参数见 `references/feish
 
 ---
 
-## 唯一返回（一行 JSON，不要任何其他文本）
+## 唯一返回（必须是你的最后一个动作）
+
+⚠️ **铁律**：把"推完飞书 + Phase 4 自审 + 必要修补"**全部做完之后**再返回这个 JSON（Workflow 里是调用 StructuredOutput）。这必须是你的**最后一个动作**——返回后**不要再调用任何工具**（不再 Read / Bash / Write）。只返回一次。返回前确认：顶部点赞横幅在、H1 无修辞功能词、`_token_<paper_id>.json` 已写。
 
 成功：
 ```json
