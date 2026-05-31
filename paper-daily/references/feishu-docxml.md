@@ -25,7 +25,7 @@ lark-cli auth status   # identities.user.openId 非空；scope 串含 im:message
 >
 > ⚠️ `--recommend` 只申请"自动批准"的 scope，可能漏掉 `im:message.send_as_user`，所以这里显式 `--domain docs,drive,im`。
 
-授权后 token 持久化（默认 7 天过期）。遇 401 / `needs_refresh` / token 过期 → `lark-cli auth login --refresh`。
+授权后 token 持久化（默认 7 天过期）。遇 401 / `needs_refresh` / token 过期 → `lark-cli auth login --refresh`；**部分版本（实测 v1.0.43）无 `--refresh` flag**（会报 `unknown flag: --refresh`），改用 `lark-cli auth login --domain docs,drive,im` 重新授权。
 
 接收卡片的人（receiver）：默认本人 DM（当前认证用户 open_id）。发到群聊：`.env` 加 `FEISHU_RECEIVER=oc_xxxxxxxx`。
 
@@ -51,6 +51,8 @@ lark-cli auth status   # identities.user.openId 非空；scope 串含 im:message
 ---
 
 ## 建文档 / 追加 / 插图（lark-cli docs）
+
+> ⚠️ **解析 lark-cli 输出**：stdout 前常有 `[lark-cli] [WARN] proxy detected …` / `Creating …` 等非 JSON 行（WARN 本走 stderr，但 `2>&1` 会把它混进 stdout）。解析 `document_id` / `folder_token` 前**从第一个 `{` 截取再 `json.loads`**（或 `json.JSONDecoder().raw_decode`），且**不要 `2>&1`**——让 WARN 留在 stderr。否则会解析成空串、token 丢失、下次重复建文件夹/文档。scripts/ 里的 Python（`feishu_push.py` 的 `extract_json`、`backfill_history.py`）已如此处理；主 agent 在 shell 里手动解析时尤须注意。
 
 ### 创建（带父文件夹）
 
