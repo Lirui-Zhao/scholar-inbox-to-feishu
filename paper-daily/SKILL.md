@@ -103,7 +103,7 @@ PY
 ```
 
 - 缺 `pdfimages`/`pdftoppm`（poppler）→ 提示装 poppler-utils（影响抓图，非致命）。
-- 缺 `lark-cli` 或 openId 空 / scope 缺 / 过期 → 提示 `lark-cli auth login --domain docs,drive,im`（过期用 `--refresh`）。
+- 缺 `lark-cli` 或 openId 空 / scope 缺 / 过期 → 提示 `lark-cli auth login --domain docs,drive,im`（过期可试 `--refresh`，部分版本如 v1.0.43 无此 flag 则直接重登）。
 - 字段读不到只 warn 不硬挂——auth status 输出格式可能随版本变。
 
 **0b. Scholar Inbox 密钥**：
@@ -156,7 +156,11 @@ cat "$WORKDIR/_digest.json" | \
   > "$WORKDIR/_todo.json"
 ```
 
-空数组 → 输出 "今日推荐已全部处理过 ✅"，跳到 Round 5。
+**去重后分流**：
+
+- `_todo.json` **非空** → 正常路径：Round 2.5 → 3 → 4。
+- `_todo.json` **空数组**（今日 digest 全部 already-seen）→ **不再直接收尾**：跳过 Round 2.5 与 Round 3，转 **Round 2H（历史索引模式）**——不重复出文档，但仍生成当日索引 + 发卡片，每篇「深度阅读」链接前指既有历史文档。例外：`--dry-run` 只打印今日推荐不建任何东西；`--no-feishu` 只打印 "今日推荐已全部处理过 ✅" 并到 Round 5。
+- **部分 seen（混合）** 不受影响：Round 3 只建新的那几篇；若也想把当日 digest 里已 seen 的几篇前指纳入索引/卡片，见 Round 2H 末「混合场景备注」。
 
 ### Round 2.5：预建当日索引文档"壳子" ⛔
 
@@ -172,6 +176,62 @@ printf '<title>📚 %s · 每日论文（Top %s）</title>' "$DATE" "$N" | \
     --parent-token {DATE_FOLDER_TOKEN} --content -
 # 解析 stdout：INDEX_DOC_ID = data.document.document_id；INDEX_DOC_URL = data.document.url
 ```
+
+### Round 2H：全 seen → 历史索引模式（不重复出文档）⛔
+
+**触发**：Round 2 去重后 `_todo.json` 为空（今日 digest 全部 already-seen）。`--dry-run` / `--no-feishu` 不进入本 Round（见 Round 2 分流）。目标：**不重复建深读文档**，但照常出当日索引 + 发卡片，每篇「深度阅读」链接**前指**到此前已建好的历史文档。
+
+**1. 反查历史文档**（从过往 `~/papers-daily/<别的日期>/` 取 doc_url / 中文标题 / 一句话总结）：
+
+```bash
+python3 ~/.claude/skills/paper-daily/scripts/backfill_history.py \
+    --digest "$WORKDIR/_digest.json" --exclude-date "$DATE" \
+    --out "$WORKDIR/_history_records.json"
+```
+
+输出数组每篇含 `paper_id/title/score/doc_url/summary/source_date/found/fallback_url`，保持 digest（ranking 降序）顺序。`found=false`（历史目录被清理、查不到）→ `doc_url` 空，用 `fallback_url`（digest 的原文链接）兜底并在索引/卡片处标注「(原文)」。
+
+**2. 建索引壳子**（同 Round 2.5，`N` = digest 篇数；`DATE_FOLDER_TOKEN` 来自 Round 0.5）。**幂等**：重跑同日时若 `$WORKDIR/_index_doc.json` 已存在就复用，绝不重复建——本 Round 的宗旨就是「不重复出文档」：
+
+```bash
+N=$(python3 -c "import json;print(len(json.load(open('$WORKDIR/_digest.json'))))")
+if [ -s "$WORKDIR/_index_doc.json" ]; then
+  cat "$WORKDIR/_index_doc.json"   # 复用：内含 {"document_id","url"}
+else
+  printf '<title>📚 %s · 每日论文（Top %s）</title>' "$DATE" "$N" | \
+    lark-cli docs +create --api-version v2 \
+      --title "📚 $DATE · 每日论文（Top $N）" \
+      --parent-token {DATE_FOLDER_TOKEN} --content - \
+      > "$WORKDIR/_index_create.out" 2>"$WORKDIR/_index_create.err"
+  # 解析：从 stdout 第一个 `{` 截取再 json.loads（前面有 [WARN] proxy / 进度行）；勿 2>&1。
+  # 把 {"document_id","url"} 落到 $WORKDIR/_index_doc.json 作幂等缓存。
+  # INDEX_DOC_ID = data.document.document_id；INDEX_DOC_URL = data.document.url
+fi
+```
+
+**3. 填充索引正文**：按 `references/feishu-docxml.md` 「Round 4 当日索引文档模式」构造正文（**不含 `<title>`**）。与正常 Round 4.1 唯一差别——表格「深度阅读」列与每个 H2 的超链接一律指向 `_history_records.json` 的 `doc_url`（缺则 `fallback_url` 并标注「(原文)」）；概览 callout 注明「本批此前已逐篇解读，本索引前指既有文档」。机构取 digest 的 `affiliations`（缩写前 1-2 个 + "等"）、热度取 `total_read`/`total_likes`、一句话简介取 `_history_records.json` 的 `summary`。先写本地 `{WORKDIR}/_index.xml` 再 `append`（**勿** `2>&1`）：
+
+```bash
+# 幂等：壳子是空的才灌正文，避免重跑把正文 append 两遍（正文翻倍）
+if [ ! -f "$WORKDIR/_index_appended.flag" ]; then
+  cat "$WORKDIR/_index.xml" | lark-cli docs +update --api-version v2 \
+      --doc {INDEX_DOC_ID} --command append --content - \
+  && touch "$WORKDIR/_index_appended.flag"
+fi
+```
+
+**4. 发汇总卡片**：records = `[INDEX 行]` + `_history_records.json` 各篇（`doc_url` 缺则用 `fallback_url`），写到 `{WORKDIR}/_feishu_records.json` 后：
+
+```bash
+python3 ~/.claude/skills/paper-daily/scripts/feishu_push.py send-card \
+    --date "$DATE" --records-json "$WORKDIR/_feishu_records.json"
+```
+
+（重跑同日会再发一次卡片——可接受；若要严格只发一次，在 `$WORKDIR/_card_sent.flag` 存在时跳过、发成功后 `touch` 它。）
+
+**5. 不写 seen**（本就全 seen），到 Round 5（用历史模式文案）。
+
+> **混合场景备注**：若希望「部分 seen」当天的索引/卡片也把已 seen 的几篇前指纳入——在 Round 4 之前对**整个 digest**（而非仅 todo）跑一次 `backfill_history.py`，把 `found=true` 的历史篇与本次新建篇按 digest 顺序合并进索引表格与卡片 records（新建篇用本次 doc_url，历史篇用反查 doc_url）。默认不开启，以免改动正常混合流程。
 
 ### Round 3：并发跑 sub-agent ⛔
 
@@ -288,6 +348,12 @@ python3 ~/.claude/skills/paper-daily/scripts/feishu_push.py send-card \
 > 私聊已收到汇总卡片。
 > （失败时附最常见原因一行）
 
+**历史索引模式（Round 2H）文案**：
+
+> 今日（YYYY-MM-DD）的 N 篇此前均已逐篇解读，未重复出文档；已生成当日索引并前指既有文档，汇总卡片已发。
+> 飞书云文档：{INDEX_DOC_URL}
+> （若有 found=false 的篇，附一句"M 篇历史文档未找到，已前指原文"）
+
 **不要**贴大段日志、不要复述论文内容。
 
 ---
@@ -308,7 +374,9 @@ python3 ~/.claude/skills/paper-daily/scripts/feishu_push.py send-card \
 | API 529 Overloaded | sub-agent 并发限流 | `--parallel` 调小（建议 2）；sub-agent 内已退避重试 |
 | lark-cli `missing_scope` | OAuth 缺权限 | `lark-cli auth login --domain docs,drive,im` |
 | lark-cli `unsafe file path: --file must be a relative path` | media-insert 传了绝对路径 | sub-agent 必须先 `cd` 到 images 目录用 `./name` |
-| `Login token expired` / `needs_refresh` | lark-cli 7 天 token 过期 | `lark-cli auth login --refresh` |
+| `Login token expired` / `needs_refresh` | lark-cli 7 天 token 过期 | `lark-cli auth login --refresh`（注：该版本无 `--refresh` 时用 `lark-cli auth login --domain docs,drive,im` 重登） |
+| lark-cli 输出 JSON 解析失败 / `folder_token`、`document_id` 解析成空 | stdout 前有 `[WARN] proxy` / 进度行 | 从第一个 `{` 截取再 `json.loads`；stdout 与 stderr 分离（**勿** `2>&1`） |
+| 去重后 `_todo.json` 为空（全 seen） | 今日 digest 全部已写过 | 不是错误：走 **Round 2H** 历史索引模式（不重出文档，仍出索引+卡片，链接前指历史） |
 
 ---
 
