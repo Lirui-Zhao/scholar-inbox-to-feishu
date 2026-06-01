@@ -32,6 +32,7 @@ description: |
 | Scholar Inbox 密钥 | `~/.claude/skills/paper-daily/config/.env` |
 | Scholar Inbox 脚本 | `~/.claude/skills/paper-daily/scripts/scholar_inbox.py` |
 | 去重脚本 | `~/.claude/skills/paper-daily/scripts/seen.py` |
+| 陈旧 digest 守卫 | `~/.claude/skills/paper-daily/scripts/digest_guard.py`（check / record） |
 | 飞书卡片脚本 | `~/.claude/skills/paper-daily/scripts/feishu_push.py`（仅 send-card） |
 | 图片抽取脚本 | `~/.claude/skills/paper-daily/scripts/fetch_images.py` |
 | **单篇写作方法论** | `~/.claude/skills/paper-daily/references/paper-writeup-guide.md`（sub-agent 必读） |
@@ -39,6 +40,7 @@ description: |
 | **Workflow 编排脚本** | `~/.claude/skills/paper-daily/workflows/build-docs.js` |
 | 当日本地工作目录 | `~/papers-daily/YYYY-MM-DD/` |
 | 去重状态 | `~/.local/share/paper-daily/seen.json` |
+| 上期 digest 指纹（陈旧守卫） | `~/.local/share/paper-daily/last_digest.json` |
 | 文件夹状态（飞书 token 缓存） | `~/.local/share/paper-daily/folder_state.json` |
 | Scholar Inbox cookies | `~/.local/share/paper-daily/cookies.txt` |
 | 飞书 docs/im skill | `~/.claude/skills/lark-doc/`、`~/.claude/skills/lark-im/` |
@@ -51,13 +53,13 @@ description: |
 
 | 变量 | 默认 | 作用 |
 |---|---|---|
-| `PAPER_DAILY_STATE_DIR` | `~/.local/share/paper-daily` | seen.json / cookies.txt / folder_state.json |
+| `PAPER_DAILY_STATE_DIR` | `~/.local/share/paper-daily` | seen.json / last_digest.json / cookies.txt / folder_state.json |
 | `PAPER_DAILY_WORKDIR_ROOT` | `~/papers-daily` | 每日工作目录（PDF / 图 / plan-JSON） |
 | `PAPER_DAILY_CONFIG_DIR` | `~/.claude/skills/paper-daily/config` | `.env` 所在 |
 | `FEISHU_ROOT_FOLDER` | `paper-daily` | 飞书云端根文件夹名 |
 | `PAPER_DAILY_LIMIT` / `PAPER_DAILY_PARALLEL` | `8` / `4` | 默认篇数 / 并发提示（CLI flag 优先） |
 
-脚本（`scholar_inbox.py` / `seen.py` / `feishu_push.py`）已读 `PAPER_DAILY_STATE_DIR` / `PAPER_DAILY_CONFIG_DIR` / `FEISHU_RECEIVER`；本 SKILL 的 bash 用 `${VAR:-默认}` 形式。
+脚本（`scholar_inbox.py` / `seen.py` / `digest_guard.py` / `feishu_push.py`）已读 `PAPER_DAILY_STATE_DIR` / `PAPER_DAILY_CONFIG_DIR` / `FEISHU_RECEIVER`；本 SKILL 的 bash 用 `${VAR:-默认}` 形式。
 
 ## 单链接模式（`/paper-daily <url>`）
 
@@ -137,7 +139,8 @@ LIMIT=${LIMIT:-${PAPER_DAILY_LIMIT:-8}}                        # CLI --limit 优
 python3 ~/.claude/skills/paper-daily/scripts/scholar_inbox.py digest \
     --limit "$LIMIT" \
     {如果传了 --date：加 --date MM-DD-YYYY} \
-    --out "$WORKDIR/_digest.json"
+    --out "$WORKDIR/_digest.json" \
+    --fp-out "$WORKDIR/_digest_fp.json"        # 全量 digest 指纹，供 Round 1.6 守卫
 ```
 
 脚本已按 `ranking_score` 降序排序再截断，所以 "Top N" 名副其实。读 `_digest.json` 给用户打印简短列表（标题 / 分数 / id）。
@@ -145,6 +148,37 @@ python3 ~/.claude/skills/paper-daily/scripts/scholar_inbox.py digest \
 ### Round 1.5：识别每篇论文的来源 ⛔
 
 digest 每个对象**必有**：`paper_id`(int)、`title`、`abstract`、`authors`、`affiliations`、`ranking_score`、`display_venue`、`url`、`source`。**可能 None**：`arxiv_id`（CVPR 等会议爬虫源常为 None）、`github_url`、`project_url`。
+
+### Round 1.6：陈旧 digest 守卫（防周末/节假日/过早重复）⛔
+
+Scholar Inbox 上游是 arXiv（announce 窗口周日–周四 20:00 ET），所以**新 digest 只在工作日（周一–周五）产生，周六周日没有**。请求一个没有 digest 的日期时，Scholar Inbox 会**静默回退**返回最近一期（不报错）。若不识别，周末会把周五那期当「全 seen」再发一遍卡片（连刷 3 天重复）。
+
+用 digest 指纹（全量 `paper_id` 集合的 sha256，由 Round 1 的 `--fp-out` 写出）对比上次**真正处理过**的那期：
+
+```bash
+# 仅默认运行（用户没传 --date）才允许自动跳过；显式补跑某天 → 只提示不跳过
+GUARD_FLAGS=""
+{若用户未传 --date：GUARD_FLAGS="--auto-skip"}
+
+python3 ~/.claude/skills/paper-daily/scripts/digest_guard.py check \
+    --fp "$WORKDIR/_digest_fp.json" --date "$DATE" $GUARD_FLAGS
+GUARD_RC=$?
+# 退出码：0=继续（不陈旧 / 显式 --date / 首次 / 状态损坏，fail-safe）；10=陈旧且应跳过
+```
+
+**分流**：
+
+- `GUARD_RC == 10` → **转 Round 2S（静默跳过）**：不去重、不建索引、不发卡片。
+- `GUARD_RC == 0` → 照常进 Round 2。（显式 `--date` 时若 stderr 打印了 `note: ... looks stale`，在 Round 5 文案附一句「服务端可能回退到了最近一期」。）
+- **`--dry-run`**：守卫照跑；若 `GUARD_RC == 10`，打印那行 stale 提示后**直接到 Round 5**（dry-run 本就不建东西）。
+
+| 调用 | Round 1.6 行为 |
+|---|---|
+| `/paper-daily`（默认今天，无 `--date`） | 传 `--auto-skip`；陈旧 → **Round 2S** 静默跳过 |
+| `/paper-daily --date MM-DD-YYYY` | 不传 `--auto-skip`；即使陈旧也**照常处理**，仅 stderr 提示一句 |
+| `/paper-daily --dry-run` | 守卫照跑；陈旧 → 打印提示后直接 Round 5（**不 record**） |
+| `/paper-daily --no-feishu` | 守卫照跑；陈旧 → Round 2S（本就不出索引/卡片） |
+| `/paper-daily <url>`（单链接） | 不进 Round 1/1.6/2 → 不受影响 |
 
 ### Round 2：去重 ⛔
 
@@ -154,6 +188,13 @@ digest 每个对象**必有**：`paper_id`(int)、`title`、`abstract`、`author
 cat "$WORKDIR/_digest.json" | \
   python3 ~/.claude/skills/paper-daily/scripts/seen.py filter --id-key paper_id \
   > "$WORKDIR/_todo.json"
+```
+
+**记录本期 digest（供明天判陈旧）**：把这期标记为「今天作为当日 digest 处理过」，供明天对比。**仅默认运行记录**——即 *非 `--dry-run`* 且 *未传 `--date`*。`--dry-run` 只是看看没真处理，不记；显式 `--date`（补跑某天）不是「今天的」digest，也不记（否则会用今天的归档日期记下一个回退指纹，掩盖当天稍后正常运行的陈旧判断）；Round 2S 没进本 Round，自然不记。正常路径与真正的 Round 2H 都要记。
+
+```bash
+{仅当 非 --dry-run 且 未传 --date}: python3 ~/.claude/skills/paper-daily/scripts/digest_guard.py record \
+    --fp "$WORKDIR/_digest_fp.json" --date "$DATE"
 ```
 
 **去重后分流**：
@@ -176,6 +217,18 @@ printf '<title>📚 %s · 每日论文（Top %s）</title>' "$DATE" "$N" | \
     --parent-token {DATE_FOLDER_TOKEN} --content -
 # 解析 stdout：INDEX_DOC_ID = data.document.document_id；INDEX_DOC_URL = data.document.url
 ```
+
+### Round 2S：陈旧 digest → 静默跳过（不建索引、不发卡片）
+
+**触发**：Round 1.6 判定 `GUARD_RC == 10`（指纹与上次处理过的相同、但归档日期不同，且用户未显式传 `--date`）——即服务端把上一期 digest 回退给了我们（周末 / 节假日 / 今日 digest 尚未生成）。
+
+**动作**：只打印一行说明，**不去重、不建索引壳子、不跑 sub-agent、不发飞书卡片、不写 `seen.json`、不更新 `last_digest.json`**，然后到 Round 5（用陈旧文案）：
+
+```bash
+echo "ℹ️  今日（$DATE）Scholar Inbox 仍是上一期 digest（指纹与上次处理过的一致，应为周末/节假日/尚未更新）；已跳过，不重复出文档/卡片。"
+```
+
+关键：**不触碰 `last_digest.json`**——下一个真正有新 digest 的工作日，指纹一变即自动恢复正常路径。真正的 Round 2H（新 digest 但全 seen）保持原样，只是被 Round 1.6 的陈旧分支抢在前面短路掉了「回退」这一种情况。
 
 ### Round 2H：全 seen → 历史索引模式（不重复出文档）⛔
 
@@ -354,6 +407,11 @@ python3 ~/.claude/skills/paper-daily/scripts/feishu_push.py send-card \
 > 飞书云文档：{INDEX_DOC_URL}
 > （若有 found=false 的篇，附一句"M 篇历史文档未找到，已前指原文"）
 
+**陈旧回退模式（Round 2S）文案**：
+
+> 今日（YYYY-MM-DD）Scholar Inbox 还是上一期的推荐（应为周末/节假日，或今日 digest 尚未生成）。已自动跳过，未重复建文档或发卡片。新 digest 通常工作日（周一–周五）才有，明天再跑即可。
+> （显式 `--date` 且服务端回退时：改说"服务端可能回退到了最近一期，已按你指定的日期照常处理"。）
+
 **不要**贴大段日志、不要复述论文内容。
 
 ---
@@ -390,6 +448,8 @@ python3 ~/.claude/skills/paper-daily/scripts/feishu_push.py send-card \
 
 （每天早 8:00 跑。语法以 /schedule skill 当前形式为准。）
 
+- ⏰ **digest 何时刷新**：上游 arXiv 周日–周四 20:00 ET announce，新 digest 仅工作日（周一–周五）有，周末/节假日没有。Scholar Inbox 对无 digest 的日期**静默回退**最近一期——Round 1.6 守卫会识别并在默认运行（无 `--date`）下静默跳过（Round 2S），不刷重复卡片。
+- 🕐 **设几点跑（含时区坑）**：把触发时间设在新 digest 生成之后。**中国（UTC+8）早 8:00 ≈ 前一天 ET 19–20 点**，正赶上 arXiv announce、Scholar Inbox 还没重算 → 偏早会拉到旧 digest 被守卫跳过；建议上午晚些 / 中午（如 `schedule.sh install 12:00`，≈ 当天 ET 0–3 点）。周末即使触发也只打印一行「仍是上一期，已跳过」，无副作用。
 - routine 自动用 `folder_state.json` 里的根文件夹 token，并在那下面建当天子文件夹。
 - Workflow 工具在 headless / cron 下可用即走主路径，否则自动落到 Round 3.4 手动 fan-out。
 - 无人值守重试不靠 runId：重跑同日 + 去重 + 幂等建文档，天然不产生重复。无人值守 OK。

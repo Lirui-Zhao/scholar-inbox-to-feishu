@@ -205,8 +205,8 @@ export FEISHU_RECEIVER=oc_xxxxxxxxxxxxxxxx
 让它每天定点本地自动运行。提供一个 helper（基于 cron）：
 
 ```bash
-# 启动：每天 08:00 跑 /paper-daily
-bash ~/.claude/skills/paper-daily/scripts/schedule.sh install 08:00
+# 启动：每天定点跑 /paper-daily（时间怎么挑、为什么别太早 → 见下「更新时间」）
+bash ~/.claude/skills/paper-daily/scripts/schedule.sh install 12:00
 
 # 取消
 bash ~/.claude/skills/paper-daily/scripts/schedule.sh uninstall
@@ -220,6 +220,19 @@ bash ~/.claude/skills/paper-daily/scripts/schedule.sh status
 - **前置**：需要系统有 cron。没有就先装：`sudo apt-get install -y cron && sudo service cron start`。
 - **Claude 原生备选**：也可用 `/schedule` skill（`/schedule create --cron "0 8 * * *" --prompt "/paper-daily"`，配合其 list/delete）。注意 routine 可能在云端执行，若你要在**本地**无人值守跑（依赖本机的 lark-cli 授权），优先用上面的 cron 方式。
 - ⚠️ **Token 过期**：飞书 token 约 7 天过期；cron 行已带 `--refresh` 做 best‑effort 续期，但完全过期仍需交互式重新 `lark-cli auth login`。建议定期人工跑一次确认授权有效。
+
+### Update schedule / digest 更新时间
+
+Scholar Inbox 的 digest 来自 **arXiv**，而 arXiv 的论文 announce 窗口是**周日至周四 20:00 美东（ET）**，所以**新 digest 只在工作日（周一–周五）产生，周六、周日没有新 digest**（节假日同理）。Scholar Inbox 在你请求一个没有 digest 的日期时会**静默回退**返回最近一期（不报错）。
+
+本工具自带「陈旧 digest 守卫」：默认运行（不带 `--date`）时若发现服务端回退（拿到的论文集合与上次处理过的完全一致、但日期不同），会**自动静默跳过**——不重复建文档、不发卡片（周末、节假日、或当天 digest 尚未生成时都适用）。所以**周末挂着定时任务也不会刷屏**。
+
+**建议的运行时间（含时区坑）**：把 cron 设在**新 digest 确定已生成之后**。arXiv 20:00 ET announce 后 Scholar Inbox 才会重算当天的 digest。注意时区换算：
+
+- arXiv 20:00 ET ≈ **中国（UTC+8）次日早上 08:00**——也就是说，**中国早上 8 点正好赶上 arXiv 刚 announce、Scholar Inbox 还没重算**，这时候跑会拉到前一天的旧 digest（然后被守卫跳过）。
+- 推荐设在**中国时区上午晚些 / 中午**（如 `schedule.sh install 12:00`，≈ 当天 ET 0–3 点），这时当天新 digest 已稳定可用。
+
+周末/节假日即使触发也只会打印一行「仍是上一期，已跳过」，无副作用；所以是否限定只在工作日跑（cron `1-5`）随你，不是必须。
 
 ## Security / 安全
 

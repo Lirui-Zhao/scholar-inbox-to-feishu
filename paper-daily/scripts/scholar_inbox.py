@@ -6,6 +6,7 @@ Subcommands:
   digest [--date MM-DD-YYYY]
          [--limit N]
          [--out FILE]                fetch today's (or given date's) digest as JSON
+         [--fp-out FILE]             also write a full-digest fingerprint (stale-digest guard)
 
 Config sources (in priority order):
   1. environment variables
@@ -21,6 +22,7 @@ State:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -143,7 +145,8 @@ def extract_paper_list(data):
     raise SystemExit(f"Unexpected digest response shape; top-level: {top}")
 
 
-def cmd_digest(env: dict[str, str], date: str | None, limit: int | None, out: str | None) -> None:
+def cmd_digest(env: dict[str, str], date: str | None, limit: int | None,
+               out: str | None, fp_out: str | None = None) -> None:
     jar = load_jar()
     if not list(jar):
         cmd_login(env)
@@ -179,6 +182,19 @@ def cmd_digest(env: dict[str, str], date: str | None, limit: int | None, out: st
 
     papers = sorted(papers, key=_score, reverse=True)
 
+    # Fingerprint the FULL digest (before --limit truncation) by its paper_id set, so a
+    # stale-fallback digest (server re-serves the latest on a dateless day, e.g. weekends)
+    # is detectable regardless of --limit. Consumed by digest_guard.py.
+    if fp_out:
+        ids_full = sorted(str(p.get("paper_id")) for p in papers
+                          if isinstance(p, dict) and p.get("paper_id") is not None)
+        fp = hashlib.sha256(",".join(ids_full).encode("utf-8")).hexdigest()
+        Path(fp_out).parent.mkdir(parents=True, exist_ok=True)
+        Path(fp_out).write_text(json.dumps(
+            {"fingerprint": fp, "paper_ids": ids_full, "n": len(ids_full)},
+            ensure_ascii=False, indent=2))
+        print(f"ok: wrote digest fingerprint ({len(ids_full)} ids) to {fp_out}", file=sys.stderr)
+
     if limit is not None and limit > 0:
         papers = papers[:limit]
 
@@ -201,6 +217,7 @@ def main() -> None:
     d.add_argument("--date", help="MM-DD-YYYY (default: today, server-side)")
     d.add_argument("--limit", type=int, default=None, help="Truncate to top N papers")
     d.add_argument("--out", help="Write JSON to FILE (default: stdout)")
+    d.add_argument("--fp-out", help="Write full-digest fingerprint JSON to FILE (stale-digest guard)")
 
     args = p.parse_args()
     env = load_env()
@@ -208,7 +225,7 @@ def main() -> None:
     if args.cmd == "login":
         cmd_login(env)
     elif args.cmd == "digest":
-        cmd_digest(env, args.date, args.limit, args.out)
+        cmd_digest(env, args.date, args.limit, args.out, args.fp_out)
 
 
 if __name__ == "__main__":
