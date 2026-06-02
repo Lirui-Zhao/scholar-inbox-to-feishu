@@ -174,7 +174,7 @@ python3 ~/.claude/skills/paper-daily/scripts/fetch_images.py \
 - `content` 是合法 DocxXML 片段（`< > &` 在代码块里要转义）。meta-info 段**不要**写 venue / 年份 / paper_id。
 - `fig.file` 是相对 `_work_{paper_id}/images/` 的路径（如 `./fig2_architecture.png`）。
 - **组装完先自检 plan-JSON**：`python3 -c "import json,sys;json.load(open(sys.argv[1]))" {workdir}/_docx_plan_{paper_id}.json` 必须 parse 通过；否则修到能 parse 再 push。
-- **落一个结构化 meta sidecar**：把中文标题和一句话总结另存到 `{workdir}/_docx_meta_{paper_id}.json`，内容 `{"title":"<中文标题>","summary":"<一句话总结>"}`（与 plan-JSON 首块里的两者保持一致）。这样「全 seen 历史模式」反查时直接读结构化字段，不必靠正则刮正文——日后改了 callout 文案也不会把简介抓空。一行写完即可，不影响主流程。
+- **落一个结构化 meta sidecar**：把中文标题、一句话总结、机构列表另存到 `{workdir}/_docx_meta_{paper_id}.json`，内容 `{"title":"<中文标题>","summary":"<一句话总结>","affiliations":["<机构1>","<机构2>",...]}`（三者与 plan-JSON 首块保持一致）。`affiliations` 用你为 meta 行整理的机构列表：`_todo.json` 自带则用它，单链接源等从 PDF 提取的机构**也写进来**，实在没有则空数组 `[]`。这样「全 seen 历史模式」反查、以及**单链接模式发卡片**时都能直接读结构化字段，不必靠正则刮正文——日后改了 callout 文案也不会把简介/机构抓空。一行写完即可，不影响主流程。
 
 ### 3.2 回放 plan-JSON → 飞书（幂等 + 重试）
 

@@ -100,7 +100,7 @@ title / abstract / authors / affiliations / arxiv_id / url / html_link / github_
 - 抓图输出         : ${workdir}/_work_${pid}/   （图在 ${workdir}/_work_${pid}/images/）
 - 代码 clone       : /tmp/paper_code_${pid}/
 - 本地 plan-JSON   : ${workdir}/_docx_plan_${pid}.json
-- 结构化 meta      : ${workdir}/_docx_meta_${pid}.json  （{title, summary}，组装 plan-JSON 时一并落，供历史模式稳健反查；见 guide Phase 3.1）
+- 结构化 meta      : ${workdir}/_docx_meta_${pid}.json  （{title, summary, affiliations}，组装 plan-JSON 时一并落，供历史模式反查 + 单链接卡片机构行；见 guide Phase 3.1）
 - 幂等 token 文件  : ${workdir}/_token_${pid}.json   （已存在则复用 doc_token、跳过建文档）
 
 务必先 mkdir -p ${workdir}/_pdfs ${workdir}/_work_${pid}。
