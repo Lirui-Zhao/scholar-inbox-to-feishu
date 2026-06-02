@@ -92,6 +92,7 @@ title / abstract / authors / affiliations / arxiv_id / url / html_link / github_
     ? `<callout emoji="📚" background-color="light-blue" border-color="blue"><p>👉 <a href="${indexDocUrl}">返回今日论文索引</a>　·　👍 <a href="https://www.scholar-inbox.com">去 Scholar Inbox 点赞（帮它学你的口味）</a></p></callout>`
     : `<callout emoji="📚" background-color="light-blue" border-color="blue"><p>👍 <a href="https://www.scholar-inbox.com">去 Scholar Inbox 点赞（帮它学你的口味）</a></p></callout>   （本次无索引，只放点赞链接）`}
 - meta 热度行：用 _todo.json 的 affiliations / total_read / total_likes（缺失则省略热度行）。
+- meta「论文」链接的**显示文字用论文英文原标题**（_todo.json 的 title，论文全名），不要写「论文 PDF」/「arXiv PDF」；title 为空时回退「论文原文」（详见 guide）。
 
 【工作目录命名空间】（绝对路径，避免并发冲突）
 - workdir          : ${workdir}
@@ -99,6 +100,7 @@ title / abstract / authors / affiliations / arxiv_id / url / html_link / github_
 - 抓图输出         : ${workdir}/_work_${pid}/   （图在 ${workdir}/_work_${pid}/images/）
 - 代码 clone       : /tmp/paper_code_${pid}/
 - 本地 plan-JSON   : ${workdir}/_docx_plan_${pid}.json
+- 结构化 meta      : ${workdir}/_docx_meta_${pid}.json  （{title, summary}，组装 plan-JSON 时一并落，供历史模式稳健反查；见 guide Phase 3.1）
 - 幂等 token 文件  : ${workdir}/_token_${pid}.json   （已存在则复用 doc_token、跳过建文档）
 
 务必先 mkdir -p ${workdir}/_pdfs ${workdir}/_work_${pid}。

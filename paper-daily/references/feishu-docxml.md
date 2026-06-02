@@ -126,6 +126,8 @@ lark-cli docs +media-insert --doc $DOC_ID \
 
 meta-info 段（紧跟横幅的 `<p>`）除作者/论文/代码外，加 **机构**（`affiliations` 逗号连接）和 **热度**（`👀 {total_read} 人读过 · 👍 {total_likes} 赞`）；字段缺失（单链接模式）则省略热度行。
 
+⚠️ **论文链接锚文本用论文英文原标题（论文全名）**，不写「论文 PDF」/「arXiv PDF」：`<a href="{PDF_URL}">{论文英文原标题}</a>`。原标题取 digest 的 `title` 字段（文档 `<title>` 是中文化名，meta 行用原标题让读者看到全名）；记得转义文字里的 `& < >`；`title` 为空时回退「论文原文」。
+
 ## Round 4：当日索引文档模式（主 agent 用）
 
 主 agent **先建只含 `<title>` 的索引壳子**（Round 2.5，拿到稳定 URL 供各篇回链），待所有单篇 doc 建好后，把下面的**正文**（**不含 `<title>`**，标题已在壳子里）用 `docs +update --command append` 追加进壳子：

@@ -8,9 +8,14 @@
 
 每个 paper_id 的反查来源（优先级从高到低）：
   doc_url : 历史 _feishu_records.json  →  _token_<pid>.json
-  title   : 历史 _feishu_records.json 的中文标题  →  _docx_plan_<pid>.json 首块 <title>  →  digest 原 title
-  summary : _docx_plan_<pid>.json 首块「一句话总结」callout（可空）
+  title   : _docx_meta_<pid>.json（结构化）  →  _feishu_records.json 中文标题 / _docx_plan 首块 <title>  →  digest 原 title
+  summary : _docx_meta_<pid>.json（结构化，新版 sub-agent 落）  →  _docx_plan_<pid>.json 首块「一句话总结」callout 正则（老论文回退，可空）
   score   : 取自 *今天的* digest（ranking_score），不取历史
+
+结构化 sidecar `_docx_meta_<pid>.json`（`{"title","summary"}`）由 sub-agent 在组装
+plan-JSON 时一并落地，让历史反查不再依赖正则刮正文（改写作模板也不会悄悄抓空）。
+本次改动之前建的老论文没有这个文件 → 自动回退到下面的「一句话总结」callout 正则，
+行为与历史一致，不影响既有论文。
 多个历史日期都建过同一篇时，取**日期最新**的那次（YYYY-MM-DD 目录名字典序 = 时间序）。
 
 用法：
@@ -18,10 +23,13 @@
   cat digest.json | python3 backfill_history.py --out history_records.json   # digest 也可走 stdin
 
 输出（JSON 数组，保持 digest 原顺序，即 ranking 降序）：
-  [{paper_id, title, score, doc_url, summary, source_date, found, fallback_url}, ...]
+  [{paper_id, title, score, doc_url, summary, source_date, found, fallback_url,
+    affiliations, total_read, total_likes}, ...]
   - found=true  : doc_url 是合法历史飞书文档链接，索引/卡片直接用它
   - found=false : doc_url 为空（历史目录可能被清理）；fallback_url 给出 digest 里的原文链接
                   （项目页/PDF/arXiv/GitHub），调用方可降级指向原文并标注「(原文)」
+  - affiliations / total_read / total_likes：取自*今天的* digest，供汇总卡片展示
+    机构 + 🔥热度（与当日索引文档同步）；缺失则为 [] / None
 """
 import sys
 import os
@@ -109,6 +117,19 @@ def _scan_history(exclude_date):
             if ms:
                 kv["summary"] = _strip_tags(ms.group(1))
             put(pid, **kv)
+        # 4) _docx_meta_<pid>.json：结构化 sidecar（{title, summary}）。优先于上面正则刮出
+        #    的值（同 dir 内后写者覆盖非空）；老论文无此文件 → 保留正则结果，向后兼容。
+        for mf in glob.glob(os.path.join(d, "_docx_meta_*.json")):
+            m_pid = re.search(r"_docx_meta_(\d+)\.json$", mf)
+            if not m_pid:
+                continue
+            try:
+                meta = json.load(open(mf, encoding="utf-8"))
+            except Exception:
+                continue
+            if isinstance(meta, dict):
+                put(m_pid.group(1), title=meta.get("title", ""),
+                    summary=meta.get("summary", ""), source_date=date_name)
     return table
 
 
@@ -150,6 +171,10 @@ def main():
             "source_date": hit.get("source_date", ""),
             "found": found,
             "fallback_url": _fallback_url(p),
+            # 机构 + 🔥热度：取自今天的 digest，供汇总卡片与索引同步展示
+            "affiliations": p.get("affiliations") or [],
+            "total_read": p.get("total_read"),
+            "total_likes": p.get("total_likes"),
         })
 
     payload = json.dumps(out, ensure_ascii=False, indent=1)

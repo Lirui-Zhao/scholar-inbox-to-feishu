@@ -4,8 +4,10 @@
 仅一个子命令：
 
   send-card --date YYYY-MM-DD --records-json <FILE> [--receiver <ID>]
-      读取 records JSON（list of {paper_id, title, score, venue, doc_url}），
-      构造 Feishu interactive card，调 lark-cli im +messages-send 发出。
+      读取 records JSON（list of {paper_id, title, score, doc_url,
+      affiliations?, total_read?, total_likes?}），构造 Feishu interactive
+      card，调 lark-cli im +messages-send 发出。每篇标题下展示「机构 + 热度」
+      一行（与当日索引文档同步），字段缺失（如单链接模式）则自动省略。
       receiver 默认 = `lark-cli auth status` 里的本人 open_id；
       也可显式指定 ou_xxx（user DM）或 oc_xxx（群聊）。
 
@@ -80,16 +82,54 @@ def get_self_open_id() -> str:
     return open_id
 
 
+def _fmt_affiliations(aff) -> str:
+    """机构缩写（与索引文档表格同口径）：list 取前 1-2 个、顿号连接、>2 追加「 等」；
+    str 原样；空 → ''。"""
+    if not aff:
+        return ""
+    if isinstance(aff, str):
+        items = [aff.strip()] if aff.strip() else []
+    else:
+        items = [str(a).strip() for a in aff if str(a).strip()]
+    if not items:
+        return ""
+    head = "、".join(items[:2])
+    return f"{head} 等" if len(items) > 2 else head
+
+
+def _meta_line(r: dict) -> str:
+    """卡片每篇标题下的「机构 + 热度」单行，与当日索引文档的机构/🔥热度列同步。
+
+    机构空则省机构块；total_read / total_likes 仅在为 int 时各自加入；
+    全部缺失（如单链接模式）返回 '' → 调用方不渲染该行。
+    """
+    parts: list[str] = []
+    inst = _fmt_affiliations(r.get("affiliations"))
+    if inst:
+        parts.append(f"🏛 {inst}")
+    heat = []
+    read, likes = r.get("total_read"), r.get("total_likes")
+    if isinstance(read, int) and not isinstance(read, bool):
+        heat.append(f"👀 {read}")
+    if isinstance(likes, int) and not isinstance(likes, bool):
+        heat.append(f"👍 {likes}")
+    if heat:
+        parts.append(" · ".join(heat))
+    return "　·　".join(parts)
+
+
 def build_card(date_str: str, records: list[dict]) -> dict:
     """构造飞书 interactive card.
 
     Record 字段：
-      paper_id: int | "INDEX"
-      title:    str
-      doc_url:  str
-      score:    float (paper 才有；INDEX 不显示 score)
-      is_index: bool (可选；paper_id == "INDEX" 也视为 is_index)
-      venue:    str (不再上卡片，留着兼容旧数据)
+      paper_id:     int | "INDEX"
+      title:        str
+      doc_url:      str
+      score:        float (paper 才有；INDEX 不显示 score)
+      is_index:     bool (可选；paper_id == "INDEX" 也视为 is_index)
+      affiliations: list[str] | str (可选；机构，缩写后上卡片)
+      total_read:   int (可选；👀 已读数)
+      total_likes:  int (可选；👍 点赞数)
     """
     # is_index 排除在 paper 计数外
     paper_count = sum(
@@ -112,11 +152,14 @@ def build_card(date_str: str, records: list[dict]) -> dict:
         title = r.get("title", "(no title)").strip()
         doc_url = r.get("doc_url", "")
         if is_index:
-            # INDEX 条目：纯 title + 链接，没有 score / venue / paper_id
+            # INDEX 条目：纯 title + 链接，没有 score / 机构 / 热度 / paper_id
             content_md = f"**{title}**\n📖 [打开]({doc_url})"
         else:
             score = float(r.get("score", 0))
-            content_md = f"**[{score:.3f}] {title}**\n📖 [打开]({doc_url})"
+            meta = _meta_line(r)   # 机构 + 热度，与索引同步；缺字段则为空
+            head = f"**[{score:.3f}] {title}**"
+            content_md = (f"{head}\n{meta}\n📖 [打开]({doc_url})" if meta
+                          else f"{head}\n📖 [打开]({doc_url})")
         elements.append({
             "tag": "div",
             "text": {"tag": "lark_md", "content": content_md},
@@ -180,7 +223,8 @@ def main() -> None:
     sc = sub.add_parser("send-card", help="Send daily summary card to Feishu user/chat")
     sc.add_argument("--date", required=True, help="YYYY-MM-DD")
     sc.add_argument("--records-json", required=True,
-                    help="list[{paper_id, title, score, venue, doc_url}] 的 JSON 文件")
+                    help="list[{paper_id, title, score, doc_url, affiliations?, "
+                         "total_read?, total_likes?}] 的 JSON 文件")
     sc.add_argument("--receiver", help="ou_xxx (user) 或 oc_xxx (chat); 默认 = 本人 open_id")
 
     args = p.parse_args()

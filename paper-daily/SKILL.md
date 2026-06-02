@@ -291,7 +291,7 @@ if [ ! -f "$WORKDIR/_index_appended.flag" ]; then
 fi
 ```
 
-**4. 发汇总卡片**：records = `[INDEX 行]` + `_history_records.json` 各篇（`doc_url` 缺则用 `fallback_url`），写到 `{WORKDIR}/_feishu_records.json` 后：
+**4. 发汇总卡片**：records = `[INDEX 行]` + `_history_records.json` 各篇（`doc_url` 缺则用 `fallback_url`），写到 `{WORKDIR}/_feishu_records.json` 后。`_history_records.json` 每篇已带 `affiliations`/`total_read`/`total_likes`（`backfill_history.py` 从今天的 digest 透传），卡片会自动渲染机构 + 🔥热度，与索引同步：
 
 ```bash
 python3 ~/.claude/skills/paper-daily/scripts/feishu_push.py send-card \
@@ -393,12 +393,12 @@ cat "$WORKDIR/_index.xml" | lark-cli docs +update --api-version v2 \
 
 #### 4.2 发汇总卡片
 
-构造 records JSON 写到 `{WORKDIR}/_feishu_records.json`：
+构造 records JSON 写到 `{WORKDIR}/_feishu_records.json`。每篇 paper 条目除 `score` 外，**再带 `affiliations`/`total_read`/`total_likes`**——这几个字段主 agent 已从 `_digest.json`/`_todo.json` 持有，原样拷入即可，卡片会在标题下渲染一行「机构 + 🔥热度」与当日索引文档同步；缺失则卡片自动省略该行：
 
 ```json
 [
   {"is_index": true, "paper_id": "INDEX", "title": "📚 当日索引 · Top N 汇总（先点这个）", "doc_url": "{INDEX_DOC_URL}"},
-  {"paper_id": ..., "title": "...中文标题...", "score": 0.943, "doc_url": "..."}
+  {"paper_id": ..., "title": "...中文标题...", "score": 0.943, "doc_url": "...", "affiliations": ["Fudan", "Shanghai AI Lab"], "total_read": 128, "total_likes": 24}
 ]
 ```
 
