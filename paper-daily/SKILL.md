@@ -9,7 +9,7 @@ description: |
 
 # Paper Daily — 每日论文深度解析 → 飞书云文档
 
-⚠️ **生产级指令。你（主 agent）的职责：编排。** 拉今日 digest → 去重 → 用 Workflow 把每篇派给一个 sub-agent 做成飞书云文档（storytelling、含真实公式/图/表/代码、图文交错），归档到 `paper-daily/YYYY-MM-DD/` 文件夹 → 建当日索引 doc → 发汇总卡片到本人 DM。**单篇文档的写法不在本文件，在 `references/paper-writeup-guide.md`，sub-agent 自己读。**
+⚠️ **生产级指令。你（主 agent）的职责：编排。** 拉今日 digest → 去重 → 用 Workflow 把每篇派给一个 sub-agent 做成飞书云文档（storytelling、含真实公式/图/表/代码、图文交错），归档到 `paper-daily/YYYY-MM-DD/` 文件夹（按需单篇归 `paper-daily/单篇精读/`）→ 建当日索引 doc → 发汇总卡片到本人 DM。**单篇文档的写法不在本文件，在 `references/paper-writeup-guide.md`，sub-agent 自己读。**
 
 ## 用户调用形态
 
@@ -65,15 +65,17 @@ description: |
 
 当位置参数是一个 http(s) 链接（arxiv / 项目页 / PDF）时，**跳过 Scholar Inbox**（不走 Round 1/2/2.5 与 Round 4 索引），只解析这一篇并推给用户。
 
-1. **预检 + 文件夹**：照 Round 0 预检；Round 0.5 只需确保根文件夹存在，并建/复用一个专放临时单篇的子文件夹 `${FEISHU_ROOT_FOLDER:-paper-daily}/adhoc`（token 记进 `folder_state.json` 的 `date_folders["adhoc"]`）。
+> **「单篇精读」= 按需单篇**（你手动 `/paper-daily <url>` 点的单篇），区别于每日批量；统一放在根夹下的固定子夹 `${FEISHU_ROOT_FOLDER:-paper-daily}/单篇精读`，不再用 adhoc / 时间戳命名。
+
+1. **预检 + 文件夹**：照 Round 0 预检；确保根文件夹存在（用 [Round 0.5 的幂等「确保根夹」逻辑](#ensure-root-folder)——校验缓存/按名查重后复用，找不到才建），并建/复用一个**固定**的单篇子文件夹 `${FEISHU_ROOT_FOLDER:-paper-daily}/单篇精读`——token 缓存到 `folder_state.json` 顶层的 `single_folder_token`（复用规则：非空且 `lark-cli drive files list` 校验有效则用；否则在根夹里找 `name==单篇精读` 的 folder，找到复用、没有才 `lark-cli drive +create-folder --name "单篇精读" --folder-token <root_token>` 建）。
 2. **解析链接成记录**：
    ```bash
-   WORKDIR=${PAPER_DAILY_WORKDIR_ROOT:-$HOME/papers-daily}/adhoc
+   WORKDIR=${PAPER_DAILY_WORKDIR_ROOT:-$HOME/papers-daily}/adhoc   # 本地临时目录，对应云端的「单篇精读」夹；保留原名即可
    mkdir -p "$WORKDIR"
    python3 ~/.claude/skills/paper-daily/scripts/adhoc_record.py '<url>' > "$WORKDIR/_todo.json"
    ```
    （arxiv 自动取标题/作者/摘要；其它来源标题留空，sub-agent 从 PDF 提取。`paper_id` 为脚本生成的稳定 int。）
-3. **建文档**：用 `build-docs.js` 跑这 1 篇，`args.indexDocUrl: ""`（无返回索引、**仍有点赞链接**），`dateFolderToken` = adhoc 子文件夹 token，`workdir` = 上面的 adhoc 目录，`papers` = `[{paper_id, title}]`。**不读/不写 seen.json**（显式按需请求）；幂等 `_token_{paper_id}.json` 防重复建。Workflow 不可用则手动单个 Agent（briefing 同 Round 3.4，INDEX_URL 留空）。
+3. **建文档**：用 `build-docs.js` 跑这 1 篇，`args.indexDocUrl: ""`（无返回索引、**仍有点赞链接**），`dateFolderToken` = 单篇精读 子文件夹 token（`single_folder_token`），`workdir` = 上面的 adhoc 目录，`papers` = `[{paper_id, title}]`。**不读/不写 seen.json**（显式按需请求）；幂等 `_token_{paper_id}.json` 防重复建。Workflow 不可用则手动单个 Agent（briefing 同 Round 3.4，INDEX_URL 留空）。
 4. **推送**：从返回里取成功那篇，构造**单条** records（无 INDEX 条目）跑 `feishu_push.py send-card`，并把 `doc_url` 回给用户；失败直接报原因。
 
 > 单链接模式没有 digest 的热度字段，doc 顶部仍有「去 Scholar Inbox 点赞」链接，但 meta 不显示 👀/👍 热度。
@@ -120,13 +122,29 @@ test -f ~/.claude/skills/paper-daily/config/.env && echo present || echo missing
 
 ### Round 0.5：飞书文件夹就绪 ⛔
 
-读 `${PAPER_DAILY_STATE_DIR:-~/.local/share/paper-daily}/folder_state.json`：
+读 `${PAPER_DAILY_STATE_DIR:-~/.local/share/paper-daily}/folder_state.json`。核心原则：**校验缓存 token 是否仍有效 + 云端按名查重后复用，找不到才建**——状态文件一旦丢失/重置，绝不盲目再建一个同名根夹。
 
-- **不存在** → 创建空 `{"paper_daily_root_token": "", "date_folders": {}}`。
-- `paper_daily_root_token` 为空 → 建根文件夹 `lark-cli drive +create-folder --name "${FEISHU_ROOT_FOLDER:-paper-daily}"`，解析 `data.folder_token` 写回。
-- 今日（YYYY-MM-DD）不在 `date_folders` → 建子文件夹 `lark-cli drive +create-folder --name "YYYY-MM-DD" --folder-token <root_token>`，写回。
+1. **不存在** → 创建空 `{"paper_daily_root_token": "", "single_folder_token": "", "date_folders": {}}`。
 
-最终拿到 `DATE_FOLDER_TOKEN` 供 Round 3 / Round 4 用。
+2. <a name="ensure-root-folder"></a>**确保根夹（幂等）**——这套逻辑单链接模式也会复用：
+   a. `paper_daily_root_token` **非空** → 先校验它仍有效（被删/进回收站则失效）：
+      ```bash
+      lark-cli drive files list --params "{\"folder_token\":\"$ROOT_TOKEN\"}"
+      # 解析：从 stdout 第一个 `{` 截取再 json.loads（前面可能有 [WARN] proxy 行）；勿 2>&1。
+      # 报错 / 查不到 → 视作失效，当作空处理（往下走 b）。
+      ```
+   b. **失效或为空** → 先在**云盘根**（`folder_token` 传空串 `""`）列子项，找 `type=="folder"` 且 `name==${FEISHU_ROOT_FOLDER:-paper-daily}` 的：
+      ```bash
+      lark-cli drive files list --params '{"folder_token":""}'
+      # 同样从第一个 `{` 截取再 json.loads；结果在 data.files[]（每项有 name/token/type）。
+      ```
+      · **恰好 1 个** → 复用其 `token`，写回 `paper_daily_root_token`（**不要新建**）；
+      · **>1 个** → 告警并停下，提示用户「云端有多个同名根夹（`${FEISHU_ROOT_FOLDER:-paper-daily}`），请先整顿/合并后再跑」（绝不盲目再建第 N 个）；
+      · **0 个** → 才新建：`lark-cli drive +create-folder --name "${FEISHU_ROOT_FOLDER:-paper-daily}"`，解析 `data.folder_token` 写回。
+
+3. **确保当日日期子夹（幂等）**：先 list 根夹子项，若已存在 `type=="folder"` 且 `name==YYYY-MM-DD` 的 → 复用其 `token` 写回 `date_folders["YYYY-MM-DD"]`；**否则才建** `lark-cli drive +create-folder --name "YYYY-MM-DD" --folder-token <root_token>`，写回。杜绝重复日期夹。
+
+4. 最终 `DATE_FOLDER_TOKEN` = 当日日期夹 token，供 Round 3 / Round 4 用。
 
 ### Round 1：拉取 digest ⛔
 

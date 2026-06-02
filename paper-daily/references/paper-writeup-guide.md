@@ -181,6 +181,7 @@ python3 ~/.claude/skills/paper-daily/scripts/fetch_images.py \
 **① 幂等建文档**：先看 `{workdir}/_token_{paper_id}.json` 是否存在。
 - 存在 → 读出里面的 `doc_id` / `doc_token` / `doc_url`，**跳过创建**，直接进 ②（这是重试路径，避免重复文档）。
 - 不存在 → `lark-cli docs +create --api-version v2 --title "{中文标题}" --parent-token {DATE_FOLDER_TOKEN} --content '<plan-JSON 第 0 块即 title+总结+meta 的 content>'`，解析 stdout 拿 `document_id` / `url`，**立刻**写 `{workdir}/_token_{paper_id}.json`：`{"paper_id":<int>,"doc_id":"...","doc_token":"...","doc_url":"..."}`。
+  - **落点保障**（不可跳过）：写完 token 文件后**立刻**再跑一次 `lark-cli drive +move --file-token {doc_token} --folder-token {DATE_FOLDER_TOKEN} --type docx`（无论 `+create` 是否已正确归位都做一次；幂等无害；防止 `+create` 偶发把文档掉到云盘根目录）。
 
 **② `cd {workdir}/_work_{paper_id}/images`**（必须，lark-cli `--file` 拒绝绝对路径）。
 

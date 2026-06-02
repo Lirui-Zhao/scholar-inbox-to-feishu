@@ -193,7 +193,7 @@ export FEISHU_RECEIVER=oc_xxxxxxxxxxxxxxxx
 /paper-daily https://arxiv.org/abs/2605.27817   # 单链接模式：只解析这一篇并推给你
 ```
 
-**单链接模式 / single-link mode**：位置参数给一个 arxiv / 项目页 / PDF 链接，就只解析那一篇、生成一篇飞书 doc 推给你（不走 Scholar Inbox digest，归档到 `paper-daily/adhoc/`）。适合你在别处看到一篇想读的论文时随手丢进来。
+**单链接模式 / single-link mode**：位置参数给一个 arxiv / 项目页 / PDF 链接，就只解析那一篇、生成一篇飞书 doc 推给你（不走 Scholar Inbox digest，归档到 `paper-daily/单篇精读/`）。适合你在别处看到一篇想读的论文时随手丢进来。「单篇精读」是根文件夹下专放按需单篇的固定子夹（token 缓存在 `folder_state.json` 的 `single_folder_token`），与每日批量的 `paper-daily/YYYY-MM-DD/` 区分。
 
 > ⚠️ **已知限制 / known limitation**：对**超长（30+ 页）且全是矢量图**的论文（`pdfimages` 抽不到位图、需逐页渲染），单篇构建可能耗时很久甚至不收敛。这类论文建议走每日 digest 流程，或先手动准备好配图。常规长度（≤ ~20 页）的论文不受影响。
 > For unusually long (30+ pages) papers whose figures are all vector graphics, single-paper build can be very slow or may not converge; prefer the daily digest flow for those.

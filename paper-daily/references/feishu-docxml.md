@@ -64,7 +64,7 @@ lark-cli docs +create --api-version v2 \
 # 解析 stdout JSON：data.document.document_id (DOC_ID)、data.document.url (DOC_URL)
 ```
 
-⚠️ 创建时**必须**带 `--parent-token`，否则文档落到根目录，归档失效。
+⚠️ 创建时**必须**带 `--parent-token`，否则文档落到根目录，归档失效。**并且**建完后务必再跑一次落点保障 move：`lark-cli drive +move --file-token <DOC_TOKEN> --folder-token <FOLDER_TOKEN> --type docx`（幂等无害）——因为 `+create` 偶发不把文档落进指定父夹会把它丢到云盘根目录，这一步兜底归位。
 
 ⚠️ **大段 / 含嵌套引号的 DocxXML 用 stdin，不要内联**：`--content '...'` 内联只适合短小片段；当内容很长或含 `"`、`'`、中文引号时，shell 转义极易出错。改用 stdin：
 ```bash
