@@ -77,8 +77,10 @@ description: |
    （arxiv 自动取标题/作者/摘要；其它来源标题留空，sub-agent 从 PDF 提取。`paper_id` 为脚本生成的稳定 int。）
 3. **建文档**：用 `build-docs.js` 跑这 1 篇，`args.indexDocUrl: ""`（无返回索引、**仍有点赞链接**），`dateFolderToken` = 单篇精读 子文件夹 token（`single_folder_token`），`workdir` = 上面的 adhoc 目录，`papers` = `[{paper_id, title}]`。**不读/不写 seen.json**（显式按需请求）；幂等 `_token_{paper_id}.json` 防重复建。Workflow 不可用则手动单个 Agent（briefing 同 Round 3.4，INDEX_URL 留空）。
 4. **推送**：从返回里取成功那篇，构造**单条** records（无 INDEX 条目）跑 `feishu_push.py send-card`，并把 `doc_url` 回给用户；失败直接报原因。
+   - **机构**：单链接源的 `_todo.json.affiliations` 常为空（非 arxiv 不自动抓），但 sub-agent 已从 PDF 提取并写进 `{WORKDIR}/_docx_meta_{paper_id}.json` 的 `affiliations`——构造 records 时**优先读这里**塞进 `affiliations` 字段（缩写交给卡片脚本），让卡片标题下渲染「🏛 机构」行，与每日卡片同口径；读不到再退回 `_todo.json.affiliations`（可能仍为空）。
+   - **热度**：单链接无 digest，`total_read`/`total_likes` 不存在，记录里**不带**这俩字段，卡片自动省略 👀/👍（无法补）。
 
-> 单链接模式没有 digest 的热度字段，doc 顶部仍有「去 Scholar Inbox 点赞」链接，但 meta 不显示 👀/👍 热度。
+> 单链接模式没有 digest 的热度字段：doc 顶部仍有「去 Scholar Inbox 点赞」链接，卡片/文档 meta 会显示从 PDF 提取的 🏛 机构，但不显示 👀/👍 热度（digest 专有）。
 
 ---
 
