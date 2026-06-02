@@ -151,7 +151,7 @@ python3 ~/.claude/skills/paper-daily/scripts/fetch_images.py \
 
 ```json
 [
-  {"type":"xml","content":"<title>中文标题</title><callout emoji=\"📚\" background-color=\"light-blue\" border-color=\"blue\"><p>👉 <a href=\"{INDEX_URL}\">返回今日论文索引</a>　·　👍 <a href=\"https://www.scholar-inbox.com\">去 Scholar Inbox 点赞（帮它学你的口味）</a></p></callout><callout emoji=\"💡\" background-color=\"light-yellow\" border-color=\"yellow\"><p><b>一句话总结</b>：（100 字内）</p></callout><p><b>作者</b>: ...<br/><b>机构</b>: {affiliations 用逗号连接}<br/><b>热度</b>: 👀 {total_read} 人读过 · 👍 {total_likes} 赞<br/><b>论文</b>: <a href=\"{PDF_URL}\">论文 PDF</a><br/><b>代码</b>: 未公开（或 GitHub URL）</p>"},
+  {"type":"xml","content":"<title>中文标题</title><callout emoji=\"📚\" background-color=\"light-blue\" border-color=\"blue\"><p>👉 <a href=\"{INDEX_URL}\">返回今日论文索引</a>　·　👍 <a href=\"https://www.scholar-inbox.com\">去 Scholar Inbox 点赞（帮它学你的口味）</a></p></callout><callout emoji=\"💡\" background-color=\"light-yellow\" border-color=\"yellow\"><p><b>一句话总结</b>：（100 字内）</p></callout><p><b>作者</b>: ...<br/><b>机构</b>: {affiliations 用逗号连接}<br/><b>热度</b>: 👀 {total_read} 人读过 · 👍 {total_likes} 赞<br/><b>论文</b>: <a href=\"{PDF_URL}\">{论文英文原标题}</a><br/><b>代码</b>: 未公开（或 GitHub URL）</p>"},
   {"type":"xml","content":"<h1>开场 H1</h1><p>...反常识场景...</p><p>...</p><p>...</p>"},
   {"type":"xml","content":"<h1>现有方法的瓶颈</h1><p>...</p>"},
   {"type":"xml","content":"<h1>核心洞察</h1><p>...用 <latex>核心公式</latex>...类比...</p>"},
@@ -169,10 +169,12 @@ python3 ~/.claude/skills/paper-daily/scripts/fetch_images.py \
   - 「返回今日论文索引」：`{INDEX_URL}` 用 briefing 给你的 INDEX_URL。briefing **未提供** INDEX_URL（如 `--no-feishu` / 单链接模式）时，**去掉这一段**，但横幅仍保留下面的点赞链接。
   - 「去 Scholar Inbox 点赞」：链接是**常量** `https://www.scholar-inbox.com`（首页；用户登录态下打开自己的 digest 去点赞，帮算法学口味）。**任何时候都保留**。⚠️ 绝不把 sha_key 放进链接。
 - **meta 热度行**：`<b>机构</b>` 用 `_todo.json` 里的 `affiliations`（逗号连接）；`<b>热度</b>` 用 `total_read`(👀) + `total_likes`(👍)。这几个字段缺失（单链接模式没有）时**省略热度行**、机构尽力而为。
+- **论文链接显示文字 = 论文英文原标题**（`_todo.json` 的 `title` 字段，即论文全名），**不要**写「论文 PDF」/「arXiv PDF」这类泛称——文档 `<title>` 是中文化名，meta 行用原标题让读者一眼看到论文全名。记得 XML 转义文字里的 `&`/`<`/`>`（写成 `&amp;`/`&lt;`/`&gt;`）。`title` 为空（个别 CVPR 源标题留空、要你从 PDF 提取）时回退显示「论文原文」。
 - **图文交错顺序 = 数组顺序**。把 `fig` 块放在它要解释的正文块**后面**，不要全堆末尾。
 - `content` 是合法 DocxXML 片段（`< > &` 在代码块里要转义）。meta-info 段**不要**写 venue / 年份 / paper_id。
 - `fig.file` 是相对 `_work_{paper_id}/images/` 的路径（如 `./fig2_architecture.png`）。
 - **组装完先自检 plan-JSON**：`python3 -c "import json,sys;json.load(open(sys.argv[1]))" {workdir}/_docx_plan_{paper_id}.json` 必须 parse 通过；否则修到能 parse 再 push。
+- **落一个结构化 meta sidecar**：把中文标题和一句话总结另存到 `{workdir}/_docx_meta_{paper_id}.json`，内容 `{"title":"<中文标题>","summary":"<一句话总结>"}`（与 plan-JSON 首块里的两者保持一致）。这样「全 seen 历史模式」反查时直接读结构化字段，不必靠正则刮正文——日后改了 callout 文案也不会把简介抓空。一行写完即可，不影响主流程。
 
 ### 3.2 回放 plan-JSON → 飞书（幂等 + 重试）
 
@@ -181,6 +183,7 @@ python3 ~/.claude/skills/paper-daily/scripts/fetch_images.py \
 **① 幂等建文档**：先看 `{workdir}/_token_{paper_id}.json` 是否存在。
 - 存在 → 读出里面的 `doc_id` / `doc_token` / `doc_url`，**跳过创建**，直接进 ②（这是重试路径，避免重复文档）。
 - 不存在 → `lark-cli docs +create --api-version v2 --title "{中文标题}" --parent-token {DATE_FOLDER_TOKEN} --content '<plan-JSON 第 0 块即 title+总结+meta 的 content>'`，解析 stdout 拿 `document_id` / `url`，**立刻**写 `{workdir}/_token_{paper_id}.json`：`{"paper_id":<int>,"doc_id":"...","doc_token":"...","doc_url":"..."}`。
+  - **落点保障**（不可跳过）：写完 token 文件后**立刻**再跑一次 `lark-cli drive +move --file-token {doc_token} --folder-token {DATE_FOLDER_TOKEN} --type docx`（无论 `+create` 是否已正确归位都做一次；幂等无害；防止 `+create` 偶发把文档掉到云盘根目录）。
 
 **② `cd {workdir}/_work_{paper_id}/images`**（必须，lark-cli `--file` 拒绝绝对路径）。
 

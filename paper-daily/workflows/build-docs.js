@@ -92,6 +92,7 @@ title / abstract / authors / affiliations / arxiv_id / url / html_link / github_
     ? `<callout emoji="📚" background-color="light-blue" border-color="blue"><p>👉 <a href="${indexDocUrl}">返回今日论文索引</a>　·　👍 <a href="https://www.scholar-inbox.com">去 Scholar Inbox 点赞（帮它学你的口味）</a></p></callout>`
     : `<callout emoji="📚" background-color="light-blue" border-color="blue"><p>👍 <a href="https://www.scholar-inbox.com">去 Scholar Inbox 点赞（帮它学你的口味）</a></p></callout>   （本次无索引，只放点赞链接）`}
 - meta 热度行：用 _todo.json 的 affiliations / total_read / total_likes（缺失则省略热度行）。
+- meta「论文」链接的**显示文字用论文英文原标题**（_todo.json 的 title，论文全名），不要写「论文 PDF」/「arXiv PDF」；title 为空时回退「论文原文」（详见 guide）。
 
 【工作目录命名空间】（绝对路径，避免并发冲突）
 - workdir          : ${workdir}
@@ -99,6 +100,7 @@ title / abstract / authors / affiliations / arxiv_id / url / html_link / github_
 - 抓图输出         : ${workdir}/_work_${pid}/   （图在 ${workdir}/_work_${pid}/images/）
 - 代码 clone       : /tmp/paper_code_${pid}/
 - 本地 plan-JSON   : ${workdir}/_docx_plan_${pid}.json
+- 结构化 meta      : ${workdir}/_docx_meta_${pid}.json  （{title, summary}，组装 plan-JSON 时一并落，供历史模式稳健反查；见 guide Phase 3.1）
 - 幂等 token 文件  : ${workdir}/_token_${pid}.json   （已存在则复用 doc_token、跳过建文档）
 
 务必先 mkdir -p ${workdir}/_pdfs ${workdir}/_work_${pid}。
@@ -106,6 +108,7 @@ title / abstract / authors / affiliations / arxiv_id / url / html_link / github_
 【铁律 · 不可违反】
 1. **只用真实命令**：建/改飞书文档只有这些子命令——\`lark-cli docs +create\`、\`lark-cli docs +update --command append|block_replace|block_delete\`、\`lark-cli docs +media-insert\`、\`lark-cli docs +fetch\`。**没有 \`lark-cli docx\` 命令（是 docs），更没有 \`replay\` 命令。**"回放 plan-JSON" 指的是你自己写一个循环：按 plan-JSON 顺序，xml 块用 +update append、fig 块用 +media-insert，**逐块手动推**，不是某个 replay 命令。先 \`lark-cli docs +create --help\` 看真实 flag。
 2. **建文档后立刻写 token 文件**：\`docs +create\` 拿到 document_id/url 的那一刻，立即把 {"paper_id":${pid},"doc_id":"...","doc_token":"...","doc_url":"..."} 写到 ${workdir}/_token_${pid}.json。这是恢复与防重复的唯一依据。
+2.5. **落点保障**：建文档 + 写 token 文件后，**立刻**执行 \`lark-cli drive +move --file-token <doc_token> --folder-token ${dateFolderToken} --type docx\`（幂等无害），确保文档在目标父夹而不是云盘根目录。
 3. **用 fetch_images.py 抓图**，别手搓 pdftoppm 整页转图当配图。长论文（>20 页）：分多次 Read PDF（每次 5–6 页）、只对少数关键页整页渲染兜底。
 4. **StructuredOutput 是最后一个动作**：把"推完飞书 + Phase 4 自审 + 必要修补"全部做完后，**最后**调用一次 StructuredOutput 返回结果；返回后**不要再调用任何工具**。status 用 success / partial / failed。
 
@@ -126,7 +129,7 @@ function verifyBriefing(p, built) {
 - cliche_hits：命中 AI 套话（深入探讨/至关重要/值得注意的是/通过本研究/综上所述/在本文中/进一步研究/具有重要意义）
 
 【2. 不达标 → 一次有界修补】若任一硬指标未达标 或 有 h1_violations/cliche_hits：
-- 用 doc_token 对飞书文档做**一次**修补：缺段落/字数 → 写**真实补充内容**（如补一段"局限"或"深层意义"的实质分析）后 lark-cli docs +update --command append；违规 H1 → block_replace 成内容话题词；套话 → block_replace 重写该句；图不足 → 读 manifest 再 +media-insert。
+- 用 doc_token 对飞书文档做**一次**修补：缺段落/字数 → 写**真实补充内容**（如补一段"局限"或"深层意义"的实质分析）后 lark-cli docs +update --command append；违规 H1 → block_replace 成内容话题词；套话 → block_replace 重写该句；图不足 → 读 manifest 再 +media-insert；若文档不在目标父夹 ${dateFolderToken}（掉到了云盘根目录）→ lark-cli drive +move --file-token ${built.doc_token || '<doc_token>'} --folder-token ${dateFolderToken} --type docx 归位（属本次有界修补的一部分，幂等无害）。
 - ❌ 严禁用"进一步分析表明…/本文具有重要意义…"这类空话凑数（那本身就是被禁的 AI 套话）。
 - 修补后同步更新本地 plan-JSON，repaired=true。
 - 限一次：修补后仍不达标，meets_bar=false，把缺口写进 issues，不再循环。
@@ -151,6 +154,7 @@ char_count(中文≥3000)/n_paragraphs(<p>≥15)/n_latex/n_figures(≥3)/n_refs(
 h1_violations(<h1>含 钩子|开头|序言|尾声|金句|"N ·"数字编号前缀)/
 cliche_hits(深入探讨|至关重要|值得注意的是|通过本研究|综上所述|在本文中|进一步研究|具有重要意义)/
 顶部点赞横幅是否在（应含 https://www.scholar-inbox.com 的"去 Scholar Inbox 点赞"）。
+**落点校验**：确认文档确实在目标父夹 ${dateFolderToken} 内（用 \`lark-cli drive files list --params '{"folder_token":"${dateFolderToken}"}'\` 看成员里有无该 doc_token）；若不在（掉到了云盘根目录）→ \`lark-cli drive +move --file-token <doc_token> --folder-token ${dateFolderToken} --type docx\` 归位（直接 move 兜底亦可，幂等无害）。
 
 【3. 一次有界修补】用 doc_token 对飞书文档做**一次**修补（只用真实命令 docs +update --command append|block_replace、docs +media-insert）：
 违规 H1 → block_replace 成内容话题词；字数/段落不足 → append **真实**补充段落（❌禁 AI 套话凑数）；缺点赞横幅 → 在最前补 <callout emoji="📚" background-color="light-blue" border-color="blue"><p>👍 <a href="https://www.scholar-inbox.com">去 Scholar Inbox 点赞（帮它学你的口味）</a></p></callout>（定位不到就 append，至少要有）；图不足 → 读 manifest 再 +media-insert。

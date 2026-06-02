@@ -64,7 +64,7 @@ lark-cli docs +create --api-version v2 \
 # 解析 stdout JSON：data.document.document_id (DOC_ID)、data.document.url (DOC_URL)
 ```
 
-⚠️ 创建时**必须**带 `--parent-token`，否则文档落到根目录，归档失效。
+⚠️ 创建时**必须**带 `--parent-token`，否则文档落到根目录，归档失效。**并且**建完后务必再跑一次落点保障 move：`lark-cli drive +move --file-token <DOC_TOKEN> --folder-token <FOLDER_TOKEN> --type docx`（幂等无害）——因为 `+create` 偶发不把文档落进指定父夹会把它丢到云盘根目录，这一步兜底归位。
 
 ⚠️ **大段 / 含嵌套引号的 DocxXML 用 stdin，不要内联**：`--content '...'` 内联只适合短小片段；当内容很长或含 `"`、`'`、中文引号时，shell 转义极易出错。改用 stdin：
 ```bash
@@ -125,6 +125,8 @@ lark-cli docs +media-insert --doc $DOC_ID \
 - **去点赞**：链接是**常量** `https://www.scholar-inbox.com`（首页；用户登录态打开自己的 digest 去点赞，让推荐算法学口味）。**任何时候都保留**。⚠️ 绝不把 sha_key 放进链接。
 
 meta-info 段（紧跟横幅的 `<p>`）除作者/论文/代码外，加 **机构**（`affiliations` 逗号连接）和 **热度**（`👀 {total_read} 人读过 · 👍 {total_likes} 赞`）；字段缺失（单链接模式）则省略热度行。
+
+⚠️ **论文链接锚文本用论文英文原标题（论文全名）**，不写「论文 PDF」/「arXiv PDF」：`<a href="{PDF_URL}">{论文英文原标题}</a>`。原标题取 digest 的 `title` 字段（文档 `<title>` 是中文化名，meta 行用原标题让读者看到全名）；记得转义文字里的 `& < >`；`title` 为空时回退「论文原文」。
 
 ## Round 4：当日索引文档模式（主 agent 用）
 
